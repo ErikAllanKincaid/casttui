@@ -35,11 +35,11 @@ from textual.widgets import (
     Static,
 )
 
+from .config import Config
 from .service import CastService, Status
 
-SEEK_STEP = 10  # seconds
-VOL_STEP = 0.1  # 0.0–1.0
 VIEWS = ("devices", "cast", "nowplaying")
+NARROW_WIDTH = 60  # columns below which the compact layout kicks in
 
 
 def fmt_time(seconds: float | None) -> str:
@@ -135,6 +135,13 @@ class CastTUI(App):
     #controls Button { margin: 0 1; min-width: 6; }
     #message { dock: bottom; height: 1; padding: 0 1; background: $panel;
                color: $text-muted; }
+
+    /* Compact layout for narrow terminals: tighten the control row so the
+       eight buttons still fit, and drop decorative padding. */
+    .-narrow .view-title { padding: 0 0 0 1; }
+    .-narrow #controls { padding: 1 0; }
+    .-narrow #controls Button { min-width: 3; margin: 0; }
+    .-narrow #files { margin: 0 1; }
     """
 
     BINDINGS = [
@@ -153,9 +160,14 @@ class CastTUI(App):
         ("q", "quit", "Quit"),
     ]
 
-    def __init__(self, service: CastService | None = None) -> None:
+    def __init__(
+        self,
+        service: CastService | None = None,
+        config: Config | None = None,
+    ) -> None:
         super().__init__()
         self.service = service or CastService()
+        self.cfg = config or Config.load()
         self._view = "devices"
         self._muted = False
 
@@ -176,6 +188,9 @@ class CastTUI(App):
 
     def on_unmount(self) -> None:
         self.service.close()
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < NARROW_WIDTH, "-narrow")
 
     # -- messages (persistent line, not overlay toasts) ------------------
 
@@ -215,17 +230,28 @@ class CastTUI(App):
             btn = Button(f"{d.name}  ({d.ip_addr})", classes="device")
             btn.cast_device = d  # type: ignore[attr-defined]
             await lst.mount(btn)
+        # Auto-reconnect to the last-used device, but only on the first scan
+        # (not on a manual rescan, which the user drives themselves).
+        if self.service.device is None and self.cfg.last_device:
+            match = next(
+                (d for d in devices if d.name == self.cfg.last_device), None
+            )
+            if match is not None:
+                await self._select(match, remembered=True)
 
     def action_rescan(self) -> None:
         self.run_worker(self._scan(), exclusive=True)
 
-    async def _select(self, device) -> None:
+    async def _select(self, device, remembered: bool = False) -> None:
         try:
             await asyncio.to_thread(self.service.select, device)
         except Exception as exc:  # noqa: BLE001
             self.message(f"Could not connect: {exc}", error=True)
             return
-        self.message(f"Connected to {device.name}")
+        self.cfg.last_device = device.name
+        self.cfg.save()
+        verb = "Reconnected to" if remembered else "Connected to"
+        self.message(f"{verb} {device.name}")
         self._show("cast")
 
     # -- casting ----------------------------------------------------------
@@ -338,16 +364,16 @@ class CastTUI(App):
         self._act(self.service.pause if state == "PLAYING" else self.service.play)
 
     def action_rewind(self) -> None:
-        self._act(self.service.rewind, SEEK_STEP)
+        self._act(self.service.rewind, self.cfg.seek_step)
 
     def action_ffwd(self) -> None:
-        self._act(self.service.ffwd, SEEK_STEP)
+        self._act(self.service.ffwd, self.cfg.seek_step)
 
     def action_volup(self) -> None:
-        self._act(self.service.volumeup, VOL_STEP)
+        self._act(self.service.volumeup, self.cfg.volume_step)
 
     def action_voldown(self) -> None:
-        self._act(self.service.volumedown, VOL_STEP)
+        self._act(self.service.volumedown, self.cfg.volume_step)
 
     def action_mute(self) -> None:
         self._act(self.service.mute, not self._muted)

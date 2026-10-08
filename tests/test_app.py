@@ -6,7 +6,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from casttui.app import CastTUI, fmt_time, progress_bar
+from casttui.config import Config
 from casttui.service import CastService, Status
+
+
+def make_app(service, config=None) -> CastTUI:
+    # Always pass an explicit Config so tests never read the real user file.
+    return CastTUI(service=service, config=config or Config())
 
 
 def test_fmt_time():
@@ -34,7 +40,7 @@ def fake_service() -> CastService:
 
 @pytest.mark.asyncio
 async def test_app_boots_and_cycles_three_views():
-    app = CastTUI(service=fake_service())
+    app = make_app(fake_service())
     async with app.run_test() as pilot:
         await pilot.pause()
         assert app.query_one("#devices").display is True
@@ -49,7 +55,7 @@ async def test_app_boots_and_cycles_three_views():
 
 @pytest.mark.asyncio
 async def test_empty_scan_shows_message():
-    app = CastTUI(service=fake_service())
+    app = make_app(fake_service())
     async with app.run_test() as pilot:
         await pilot.pause()
         status = app.query_one("#devices-status")
@@ -59,7 +65,7 @@ async def test_empty_scan_shows_message():
 @pytest.mark.asyncio
 async def test_cast_url_without_device_warns():
     svc = fake_service()
-    app = CastTUI(service=svc)
+    app = make_app(svc)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.query_one("#url").value = "http://x/y.mp4"  # type: ignore[attr-defined]
@@ -69,13 +75,29 @@ async def test_cast_url_without_device_warns():
 
 
 @pytest.mark.asyncio
+async def test_auto_reconnects_to_last_device():
+    dev = MagicMock()
+    dev.name = "Living Room TV"
+    dev.ip_addr = "192.168.1.208"
+    dev._cast.media_controller.register_status_listener = MagicMock()
+    svc = CastService()
+    svc.discover = MagicMock(return_value=[dev])  # type: ignore[method-assign]
+    app = make_app(svc, config=Config(last_device="Living Room TV"))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        assert svc.device is dev  # reconnected without a click
+        assert app.query_one("#cast").display is True
+
+
+@pytest.mark.asyncio
 async def test_now_playing_refreshes_from_snapshot():
     svc = fake_service()
     dev = MagicMock()
     dev._cast.media_controller.register_status_listener = MagicMock()
     svc.select(dev)
     svc._handle_push(Status(state="PLAYING", title="Clip", position=5, duration=10, volume=0.5))
-    app = CastTUI(service=svc)
+    app = make_app(svc)
     async with app.run_test() as pilot:
         await pilot.pause()
         app._refresh_now_playing()

@@ -12,8 +12,9 @@ Status: **Milestone 3 complete (sources)**. Runnable TUI with Devices, Cast,
 and Now-playing views, live status, and the core controls. Casts **local
 files** (served over a managed HTTP server), **direct media URLs**, **YouTube**
 (native receiver), other **yt-dlp sites**, and arbitrary **web pages**
-(DashCast). Next: last-device persistence, narrow-terminal layout, and a
-tetron-wm catalog entry (M4).
+(DashCast). Remembers the last device and reconnects on launch, and adapts to
+narrow terminals. tetron-wm integration entries live in
+[`docs/TETRON_WM_INTEGRATION.md`](docs/TETRON_WM_INTEGRATION.md).
 
 ## Setup
 
@@ -45,6 +46,18 @@ Chromecast). Every key also has a clickable button.
 Local files are served to the Chromecast over HTTP from this host, so the two
 must share a LAN subnet (SCOPE §8/§12). `xclip` or `xsel` enables middle-click
 paste into the URL field.
+
+## Config
+
+`~/.config/casttui/config.toml` (override dir with `$XDG_CONFIG_HOME`). Written
+automatically when you pick a device; a missing or malformed file falls back to
+defaults.
+
+```toml
+last_device = "Living Room TV"
+seek_step = 10      # seconds for ←/→
+volume_step = 0.1   # 0.0–1.0 step for ↑/↓
+```
 
 ## Test
 
