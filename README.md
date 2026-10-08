@@ -8,8 +8,10 @@ without leaving the terminal. Fits the tetron-wm terminal desktop.
 
 Full design in [`SCOPE_CastTUI.md`](SCOPE_CastTUI.md).
 
-Status: **Milestone 1 (spike)**. No UI yet — proving the catt library path and
-the pychromecast status bridge first.
+Status: **Milestone 3 (sources)**. Runnable TUI with Devices, Cast, and
+Now-playing views, live status, and the core controls. Casts **local files**
+(served over a managed HTTP server) and **direct media URLs**. YouTube and
+web-page (`cast_site`) sources are the remaining M3 work.
 
 ## Setup
 
@@ -17,6 +19,33 @@ Uses [uv](https://docs.astral.sh/uv/). catt pulls in pychromecast and yt-dlp.
 
 ```sh
 uv sync
+```
+
+## Run
+
+Needs a real Chromecast on the same network.
+
+```sh
+uv run casttui
+```
+
+Pick a device (click it, or Tab to Devices and click). The **Cast** view has a
+local-file browser (click a file to cast it) and a direct-URL field (type or
+middle-click to paste, then Enter). Playback lands in **Now playing**.
+
+Keys: **Space** play/pause · **←/→** seek · **↑/↓** or **+/−** volume ·
+**m** mute · **s** stop (also tears down the file server) · **n** skip to end ·
+**r** rescan · **Tab** cycle view · **q** quit (leaves playback running on the
+Chromecast). Every key also has a clickable button.
+
+Local files are served to the Chromecast over HTTP from this host, so the two
+must share a LAN subnet (SCOPE §8/§12). `xclip` or `xsel` enables middle-click
+paste into the URL field.
+
+## Test
+
+```sh
+uv run pytest        # service + headless-app tests, no Chromecast needed
 ```
 
 ## Spike
