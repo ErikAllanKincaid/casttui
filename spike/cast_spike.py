@@ -27,10 +27,12 @@ import time
 from catt.api import discover
 from pychromecast.controllers.media import MediaStatusListener
 
-# A small, public, directly-playable MP4 (no yt-dlp needed) for the spike.
+# A small (~1 MB, 10 s), public, directly-playable MP4 (no yt-dlp needed) for
+# the spike. The old gtv-videos-bucket BigBuckBunny.mp4 now 403s (dead bucket),
+# which the receiver reports as idle_reason=ERROR → catt "Playback failed".
 DEFAULT_URL = (
-    "https://commondatastorage.googleapis.com/"
-    "gtv-videos-bucket/sample/BigBuckBunny.mp4"
+    "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/"
+    "Big_Buck_Bunny_360_10s_1MB.mp4"
 )
 
 
