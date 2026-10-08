@@ -1,0 +1,12 @@
+[project]
+name = "casttui"
+version = "0.0.1"
+description = "A terminal UI for casting media to a Chromecast, built on catt."
+readme = "README.md"
+requires-python = ">=3.11"
+# Depend on catt as a library (import catt.api / catt.controllers), tracking
+# upstream, per SCOPE_CastTUI.md §12. catt pulls in pychromecast + yt-dlp.
+# Textual is added when the UI work starts (Milestone 2); the spike needs only catt.
+dependencies = [
+    "catt>=0.13",
+]
