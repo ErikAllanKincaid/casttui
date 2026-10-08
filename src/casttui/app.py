@@ -89,12 +89,14 @@ class CastView(Vertical):
             markup=False,
         )
         yield DirectoryTree(str(Path.home()), id="files")
+        yield Input(
+            placeholder="URL — Enter/middle-click to paste; then pick a button",
+            id="url",
+        )
         with Horizontal(id="url-row"):
-            yield Input(
-                placeholder="Direct media URL — Enter or middle-click to paste",
-                id="url",
-            )
             yield Button("Cast URL", id="cast-url", variant="primary")
+            yield Button("YouTube / site", id="cast-stream")
+            yield Button("Web page", id="cast-site")
 
 
 class NowPlayingView(Vertical):
@@ -123,8 +125,9 @@ class CastTUI(App):
     #device-list { padding: 1; height: auto; }
     #device-list Button { width: 100%; margin-bottom: 1; }
     #files { height: 1fr; margin: 1; border: round $panel; }
+    #url { margin: 0 1; }
     #url-row { height: auto; padding: 0 1 1 1; }
-    #url { width: 1fr; }
+    #url-row Button { margin-right: 1; }
     #np-title { padding: 1 1 0 1; text-style: bold; }
     #np-bar { padding: 0 1; color: $success; }
     #np-state { padding: 0 1; color: $text-muted; }
@@ -249,6 +252,39 @@ class CastTUI(App):
         self.query_one("#np-title", Static).update(url.rsplit("/", 1)[-1])
         self._show("nowplaying")
 
+    async def _cast_stream(self) -> None:
+        if not self._need_device():
+            return
+        url = self.query_one("#url", Input).value.strip()
+        if not url:
+            return
+        self.message(f"Resolving {url}…")
+        try:
+            await asyncio.to_thread(self.service.play_stream, url)
+        except Exception as exc:  # noqa: BLE001
+            self.message(f"Could not play: {exc}", error=True)
+            return
+        self.message(f"Casting {url}")
+        self._show("nowplaying")
+
+    async def _cast_site(self) -> None:
+        if not self._need_device():
+            return
+        url = self.query_one("#url", Input).value.strip()
+        if not url:
+            return
+        self.message(f"Showing {url} as a web page…")
+        try:
+            await asyncio.to_thread(self.service.cast_site, url)
+        except Exception as exc:  # noqa: BLE001
+            self.message(f"Could not show page: {exc}", error=True)
+            return
+        self.query_one("#np-title", Static).update(url)
+        self.query_one("#np-bar", Static).update("")
+        self.query_one("#np-state", Static).update("WEB PAGE (no playback status)")
+        self.message(f"Showing {url}")
+        self._show("nowplaying")
+
     async def _cast_file(self, path: Path) -> None:
         if not self._need_device():
             return
@@ -349,6 +385,8 @@ class CastTUI(App):
         actions = {
             "rescan": self.action_rescan,
             "cast-url": lambda: self.run_worker(self._cast_url()),
+            "cast-stream": lambda: self.run_worker(self._cast_stream()),
+            "cast-site": lambda: self.run_worker(self._cast_site()),
             "rewind": self.action_rewind,
             "playpause": self.action_playpause,
             "stop": self.action_stop,

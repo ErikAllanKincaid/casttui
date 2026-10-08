@@ -18,6 +18,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, List, Optional
 
 from catt.api import CattDevice, discover
+from catt.controllers import get_app, get_controller
 from catt.stream_info import StreamInfo
 from pychromecast.controllers.media import MediaStatusListener
 
@@ -161,6 +162,44 @@ class CastService:
             self._stop_fileserver()
             raise
         return stream.video_title
+
+    def play_stream(self, url: str) -> None:
+        """Cast a YouTube video or a yt-dlp-supported site URL.
+
+        YouTube goes through the native YouTube receiver (full quality, and
+        catt's ``best`` progressive format rarely exists on modern YouTube, so
+        the resolve path fails with "No suitable format was found"). Other
+        sites are resolved to a direct stream via yt-dlp and played on the
+        default media receiver. The native YouTube *queue* is a later phase.
+        """
+        dev = self._require()
+        self._stop_fileserver()
+        stream = StreamInfo(url, cast_info=dev._cast.cast_info)
+        if stream.extractor == "youtube":
+            app = get_app("youtube", cast_type=dev._cast.cast_type)
+            if app.name != "youtube":
+                raise RuntimeError("this device does not support the YouTube app")
+            ctrl = get_controller(dev._cast, app, action="play_media_id")
+            if stream.is_playlist:
+                ctrl.play_playlist(
+                    stream.playlist_id,
+                    video_id=stream.video_id or stream.playlist_all_ids[0],
+                )
+            else:
+                ctrl.play_media_id(stream.video_id)
+        else:
+            dev.play_url(url, resolve=True)
+
+    def cast_site(self, url: str) -> None:
+        """Display an arbitrary web page on the device (DashCast)."""
+        dev = self._require()
+        self._stop_fileserver()
+        app = get_app("dashcast", cast_type=dev._cast.cast_type)
+        if app.name != "dashcast":
+            raise RuntimeError("this device does not support casting web pages")
+        ctrl = get_controller(dev._cast, app, action="load_url")
+        ctrl.prep_app()
+        ctrl.load_url(url)
 
     def _stop_fileserver(self) -> None:
         if self._fileserver is not None:

@@ -241,3 +241,71 @@ def test_play_file_requires_lan_ip(monkeypatch):
         assert "LAN IP" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected RuntimeError")
+
+
+# -- stream (yt-dlp resolve) + web page -------------------------------------
+
+
+def test_play_stream_youtube_uses_native_controller(monkeypatch):
+    import casttui.service as svcmod
+
+    stream = SimpleNamespace(
+        extractor="youtube", is_playlist=False, video_id="abc123",
+        playlist_id=None, playlist_all_ids=[],
+    )
+    ctrl = MagicMock()
+    monkeypatch.setattr(svcmod, "StreamInfo", lambda *a, **k: stream)
+    monkeypatch.setattr(svcmod, "get_app", lambda *a, **k: SimpleNamespace(name="youtube"))
+    monkeypatch.setattr(svcmod, "get_controller", lambda *a, **k: ctrl)
+    svc = CastService()
+    dev = make_device()
+    dev._cast.cast_type = "cast"
+    svc.select(dev)
+    svc.play_stream("https://youtu.be/abc123")
+    ctrl.play_media_id.assert_called_once_with("abc123")
+    dev.play_url.assert_not_called()
+
+
+def test_play_stream_other_site_resolves(monkeypatch):
+    import casttui.service as svcmod
+
+    stream = SimpleNamespace(extractor="vimeo", is_playlist=False)
+    monkeypatch.setattr(svcmod, "StreamInfo", lambda *a, **k: stream)
+    svc = CastService()
+    dev = make_device()
+    svc.select(dev)
+    svc.play_stream("https://vimeo.com/123")
+    dev.play_url.assert_called_once_with("https://vimeo.com/123", resolve=True)
+
+
+def test_cast_site_uses_dashcast(monkeypatch):
+    import casttui.service as svcmod
+
+    app = SimpleNamespace(name="dashcast")
+    ctrl = MagicMock()
+    monkeypatch.setattr(svcmod, "get_app", lambda *a, **k: app)
+    monkeypatch.setattr(svcmod, "get_controller", lambda *a, **k: ctrl)
+    svc = CastService()
+    dev = make_device()
+    dev._cast.cast_type = "cast"
+    svc.select(dev)
+    svc.cast_site("https://example.com")
+    ctrl.prep_app.assert_called_once()
+    ctrl.load_url.assert_called_once_with("https://example.com")
+
+
+def test_cast_site_unsupported_device(monkeypatch):
+    import casttui.service as svcmod
+
+    app = SimpleNamespace(name="default")  # dashcast not available
+    monkeypatch.setattr(svcmod, "get_app", lambda *a, **k: app)
+    svc = CastService()
+    dev = make_device()
+    dev._cast.cast_type = "audio"
+    svc.select(dev)
+    try:
+        svc.cast_site("https://example.com")
+    except RuntimeError as exc:
+        assert "web pages" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected RuntimeError")

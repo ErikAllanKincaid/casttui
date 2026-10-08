@@ -8,10 +8,12 @@ without leaving the terminal. Fits the tetron-wm terminal desktop.
 
 Full design in [`SCOPE_CastTUI.md`](SCOPE_CastTUI.md).
 
-Status: **Milestone 3 (sources)**. Runnable TUI with Devices, Cast, and
-Now-playing views, live status, and the core controls. Casts **local files**
-(served over a managed HTTP server) and **direct media URLs**. YouTube and
-web-page (`cast_site`) sources are the remaining M3 work.
+Status: **Milestone 3 complete (sources)**. Runnable TUI with Devices, Cast,
+and Now-playing views, live status, and the core controls. Casts **local
+files** (served over a managed HTTP server), **direct media URLs**, **YouTube**
+(native receiver), other **yt-dlp sites**, and arbitrary **web pages**
+(DashCast). Next: last-device persistence, narrow-terminal layout, and a
+tetron-wm catalog entry (M4).
 
 ## Setup
 
@@ -30,8 +32,10 @@ uv run casttui
 ```
 
 Pick a device (click it, or Tab to Devices and click). The **Cast** view has a
-local-file browser (click a file to cast it) and a direct-URL field (type or
-middle-click to paste, then Enter). Playback lands in **Now playing**.
+local-file browser (click a file to cast it) and a URL field (type or
+middle-click to paste) with three buttons: **Cast URL** (direct media),
+**YouTube / site** (YouTube native receiver, or any yt-dlp-supported site), and
+**Web page** (display a page via DashCast). Playback lands in **Now playing**.
 
 Keys: **Space** play/pause · **←/→** seek · **↑/↓** or **+/−** volume ·
 **m** mute · **s** stop (also tears down the file server) · **n** skip to end ·
