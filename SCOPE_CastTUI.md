@@ -1,36 +1,36 @@
-# CastTUI scope
+# casttui scope
 
-Status: scope / design (2026-10-07). A terminal UI for casting media to a Chromecast, built as a wrapper around catt (Cast All The Things). This document defines what CastTUI is, what it will and will not do, how it is built, and the order of work.
+Status: scope / design (2026-10-07). A terminal UI for casting media to a Chromecast, built as a wrapper around catt (Cast All The Things). This document defines what casttui is, what it will and will not do, how it is built, and the order of work.
 
 ## 1. Purpose
 
-Casting to a Chromecast from a terminal today means remembering catt's subcommands (`catt cast`, `catt seek`, `catt volume`, and so on) and running them one at a time with no live feedback. CastTUI turns that into a single interactive screen: pick a device, pick or paste something to play, and drive playback with a live progress bar and a few keys. It is aimed at a keyboard-and-mouse terminal user who wants a "remote control" for the living-room Chromecast without leaving the terminal, and it is a natural app for the tetron-wm terminal desktop.
+Casting to a Chromecast from a terminal today means remembering catt's subcommands (`catt cast`, `catt seek`, `catt volume`, and so on) and running them one at a time with no live feedback. casttui turns that into a single interactive screen: pick a device, pick or paste something to play, and drive playback with a live progress bar and a few keys. It is aimed at a keyboard-and-mouse terminal user who wants a "remote control" for the living-room Chromecast without leaving the terminal, and it is a natural app for the tetron-wm terminal desktop.
 
 ## 2. Goals and non-goals
 
 Goals: a responsive single-binary-feel TUI that discovers Chromecasts, casts local files, direct media URLs, YouTube videos, and arbitrary web pages, and controls playback (play, pause, seek, volume, mute, stop, skip) with a live status display. It must reuse catt's proven casting logic rather than reimplement the Cast protocol, and it should run well both standalone and inside tetron-wm.
 
-Non-goals (at least for v1): a media library or database, transcoding, multi-room or audio-group orchestration, a mobile or web frontend, and support for cast targets other than Chromecast and Chromecast-compatible receivers that catt already handles. CastTUI is a controller, not a media server or a content catalog.
+Non-goals (at least for v1): a media library or database, transcoding, multi-room or audio-group orchestration, a mobile or web frontend, and support for cast targets other than Chromecast and Chromecast-compatible receivers that catt already handles. casttui is a controller, not a media server or a content catalog.
 
 ## 3. Background: what catt provides
 
-catt (https://github.com/skorokithakis/catt, local clone at `~/code/catt/`) is a Python tool built on pychromecast (https://github.com/home-assistant-libs/pychromecast). It gives CastTUI two surfaces, and CastTUI uses the library, not the command line.
+catt (https://github.com/skorokithakis/catt, local clone at `~/code/catt/`) is a Python tool built on pychromecast (https://github.com/home-assistant-libs/pychromecast). It gives casttui two surfaces, and casttui uses the library, not the command line.
 
 - A high-level API, `catt.api` (`~/code/catt/catt/api.py`): `discover() -> List[CattDevice]`, and `CattDevice` with `play_url`, `play`, `pause`, `stop`, `seek`, `rewind`, `ffwd`, `volume`, `volumeup`, `volumedown`, and `volumemute`.
 - Controllers and status, `catt.controllers` (`~/code/catt/catt/controllers.py`): a `CastStatusListener` and a `MediaStatusListener` (subclassing pychromecast's listener), an `info()` view of the current status, and a `wait_for(states, ...)` helper. These are the hook for live updates.
-- A local-file HTTP server, `catt.http_server` (`serve_file`, and `create_server_thread` in `catt/cli.py`): catt serves a local file over HTTP for the duration of playback, because the Chromecast fetches media by URL. CastTUI reuses this so local files can be cast, and must keep that server thread alive while the file plays.
+- A local-file HTTP server, `catt.http_server` (`serve_file`, and `create_server_thread` in `catt/cli.py`): catt serves a local file over HTTP for the duration of playback, because the Chromecast fetches media by URL. casttui reuses this so local files can be cast, and must keep that server thread alive while the file plays.
 
 Using the library directly (not `subprocess catt ...`) is a hard design choice: it is the only way to get push status updates for a smooth progress bar, and it avoids the latency and parsing fragility of scraping CLI output.
 
 ## 4. Architecture
 
-CastTUI is a Python application built with Textual (https://textual.textualize.io), chosen because catt is Python so the casting library is in-process, and because Textual provides an async event loop, real widgets (progress bars, lists, modal dialogs), and mouse support that a casting remote needs. urwid is the fallback if a lighter dependency is wanted.
+casttui is a Python application built with Textual (https://textual.textualize.io), chosen because catt is Python so the casting library is in-process, and because Textual provides an async event loop, real widgets (progress bars, lists, modal dialogs), and mouse support that a casting remote needs. urwid is the fallback if a lighter dependency is wanted.
 
 The core pieces:
 
 - A thin service layer over `catt.api` that owns the selected `CattDevice`, exposes the playback actions, and starts or stops the local-file HTTP server around local playback.
-- A status bridge. pychromecast delivers media and cast status on its own background thread through the listeners in `catt.controllers`. CastTUI registers a listener on the device's underlying `media_controller` and forwards each update into Textual's event loop with `call_from_thread`, so the UI never touches Cast state from the wrong thread. The progress bar advances from the last known position plus elapsed wall-clock time between pushes, and resyncs on each real update, so it stays smooth without polling.
-- A small persistence file (for example `~/.config/casttui/config.toml`) holding the last-used device and a few preferences, so CastTUI reconnects to the usual Chromecast on launch.
+- A status bridge. pychromecast delivers media and cast status on its own background thread through the listeners in `catt.controllers`. casttui registers a listener on the device's underlying `media_controller` and forwards each update into Textual's event loop with `call_from_thread`, so the UI never touches Cast state from the wrong thread. The progress bar advances from the last known position plus elapsed wall-clock time between pushes, and resyncs on each real update, so it stays smooth without polling.
+- A small persistence file (for example `~/.config/casttui/config.toml`) holding the last-used device and a few preferences, so casttui reconnects to the usual Chromecast on launch.
 
 ## 5. Features
 
@@ -76,7 +76,7 @@ Every binding is also a visible, clickable control, so the app is usable by mous
 ## 8. Technical details and gotchas
 
 - Threading. pychromecast listeners fire off the UI thread. All Cast state reaches the UI through `call_from_thread`, and all catt calls that block (connecting, waiting for a state) run off the UI thread so the interface never freezes. catt's own `wait_for` and the event waits in `controllers.py` are blocking and must not run on the Textual loop.
-- Local files. Casting a local file means starting catt's HTTP server thread bound to a reachable address on the LAN, handing the Chromecast the server URL, and keeping the thread alive until playback ends or is stopped. CastTUI must tear the server down on stop, on quitting, and on switching media, or it will leak threads and ports. Remote URLs and YouTube do not need the server.
+- Local files. Casting a local file means starting catt's HTTP server thread bound to a reachable address on the LAN, handing the Chromecast the server URL, and keeping the thread alive until playback ends or is stopped. casttui must tear the server down on stop, on quitting, and on switching media, or it will leak threads and ports. Remote URLs and YouTube do not need the server.
 - Discovery timing. `discover()` blocks while it scans the network, so it runs off the UI thread with a spinner, and the UI stays responsive. A device list can be empty on a slow network, so rescanning is always available.
 - Volume model. catt uses a 0.0 to 1.0 float for `volume`, with separate step helpers; the UI shows 0 to 100 and converts.
 - YouTube and streams. catt resolves YouTube and many sites through yt-dlp, which can fail or change behavior as sites change; those failures surface as a friendly message, and yt-dlp is a dependency to keep updated.
@@ -87,7 +87,7 @@ Runtime: Python 3, `catt` (which brings in pychromecast and yt-dlp), and `textua
 
 ## 10. tetron-wm integration
 
-CastTUI is a good tetron-wm store app and should ship as one: a catalog entry plus a launcher entry, so it opens in a window on the terminal desktop. It needs nothing special from tetron-wm beyond a normal terminal, and it benefits from the desktop's mouse support. tetron-wm also gives a convenient test environment, since a window on the desktop can drive the living-room Chromecast while other work continues. The catalog entry should note the pychromecast and yt-dlp dependencies and that first launch may scan the network.
+casttui is a good tetron-wm store app and should ship as one: a catalog entry plus a launcher entry, so it opens in a window on the terminal desktop. It needs nothing special from tetron-wm beyond a normal terminal, and it benefits from the desktop's mouse support. tetron-wm also gives a convenient test environment, since a window on the desktop can drive the living-room Chromecast while other work continues. The catalog entry should note the pychromecast and yt-dlp dependencies and that first launch may scan the network.
 
 ## 11. Milestones
 
@@ -103,7 +103,7 @@ CastTUI is a good tetron-wm store app and should ship as one: a catalog entry pl
 - Local-file reachability: serving a file requires the Chromecast to reach the host over the LAN, which can fail behind client isolation on some routers or when casting from a machine on a different subnet.
 - Status completeness: not every receiver app reports the same fields (position and duration can be missing for some streams), so the progress bar must handle an unknown duration gracefully.
 - DECIDED (2026-10-07): v1 ships local-file casting. The HTTP server lifecycle (start on local play, tear down on stop, quit, and media switch) is therefore in scope for v1, not deferred.
-- DECIDED (2026-10-07): CastTUI depends on catt as a library (import `catt.api` and `catt.controllers`), tracking upstream, rather than vendoring the HTTP server and listeners. Revisit only if the dependency surface becomes a problem.
+- DECIDED (2026-10-07): casttui depends on catt as a library (import `catt.api` and `catt.controllers`), tracking upstream, rather than vendoring the HTTP server and listeners. Revisit only if the dependency surface becomes a problem.
 
 ## 13. Testing
 

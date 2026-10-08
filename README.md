@@ -1,4 +1,4 @@
-# CastTUI
+# casttui
 
 A terminal UI for casting media to a Chromecast, built as a wrapper around
 [catt](https://github.com/skorokithakis/catt) (Cast All The Things). Pick a
@@ -47,16 +47,16 @@ Local files are served to the Chromecast over HTTP from this host, so the two
 must share a LAN subnet (SCOPE §8/§12). `xclip` or `xsel` enables middle-click
 paste into the URL field.
 
-CastTUI casts through catt/pychromecast's **Default Media Receiver**, whose
+casttui casts through catt/pychromecast's **Default Media Receiver**, whose
 codec support is narrower than a device's native decoder. H.264 video +
 AAC/MP3 audio is the safe combination. A file whose video codec the receiver
 does not accept (AV1, HEVC, …) may play as **audio only**; if `ffprobe` is
-installed, CastTUI warns about this before playing. CastTUI does not transcode
+installed, casttui warns about this before playing. casttui does not transcode
 (SCOPE §2).
 
 Browsers and VLC still play such a file by decoding it on the PC and sending
 the device re-encoded H.264 (tab mirroring / "conversion") — the device never
-sees the original codec. CastTUI does the same, optionally: with `transcode`
+sees the original codec. casttui does the same, optionally: with `transcode`
 enabled (the default), a file whose codec the device cannot decode is streamed
 through a live **ffmpeg** H.264/AAC transcode instead of being skipped. This
 uses CPU (a modern desktop handles 1080p in real time, like VLC's warning says)

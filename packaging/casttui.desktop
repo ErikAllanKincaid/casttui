@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=CastTUI
+Name=casttui
 GenericName=Chromecast remote
 Comment=Cast local files, URLs, YouTube and web pages to a Chromecast from the terminal
 # Runs in a terminal; tetron-wm launches it as a windowed TUI. Adjust the exec

@@ -1,6 +1,6 @@
 """Best-effort local-media probing to warn about unplayable codecs.
 
-The Chromecast default media receiver decodes a limited codec set. CastTUI does
+The Chromecast default media receiver decodes a limited codec set. casttui does
 not transcode (SCOPE_CastTUI.md §2), so a file the device cannot decode plays
 wrong — most visibly, an unsupported *video* codec with a supported *audio*
 codec plays as audio only. We probe with ffprobe (if present) and surface a
@@ -68,6 +68,6 @@ def unsupported_warning(path: str) -> Optional[str]:
     if codec and codec in LIKELY_UNSUPPORTED_VIDEO:
         return (
             f"video codec '{codec}' is not supported by most Chromecasts — "
-            f"it may play as audio only (CastTUI does not transcode)"
+            f"it may play as audio only (casttui does not transcode)"
         )
     return None

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CastTUI Milestone 1 spike.
+"""casttui Milestone 1 spike.
 
 Proves the catt library path + the pychromecast status bridge before any UI:
 
@@ -112,7 +112,7 @@ def pick_device(name: str | None):
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="CastTUI Milestone 1 spike")
+    ap = argparse.ArgumentParser(description="casttui Milestone 1 spike")
     ap.add_argument("--name", help="Chromecast friendly name (default: first found)")
     ap.add_argument("--url", default=DEFAULT_URL, help="media URL to cast")
     ap.add_argument("--seconds", type=int, default=30, help="how long to watch status")

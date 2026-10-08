@@ -1,6 +1,6 @@
-# CastTUI in tetron-wm (store + launcher entry)
+# casttui in tetron-wm (store + launcher entry)
 
-CastTUI is designed to ship as a tetron-wm store app: it is a keyboard-and-mouse
+casttui is designed to ship as a tetron-wm store app: it is a keyboard-and-mouse
 TUI that drives the living-room Chromecast, and it needs nothing from tetron-wm
 beyond a normal terminal (SCOPE_CastTUI.md §10). This document holds the exact
 entries to register it, and the two prerequisites that gate a clean
@@ -8,7 +8,7 @@ registration.
 
 ## Prerequisites (not yet met)
 
-1. **Publish CastTUI** so there is a real install command. The intended name is
+1. **Publish casttui** so there is a real install command. The intended name is
    `casttui` on PyPI; until then the only install is from source
    (`uv tool install git+<repo>` or `pipx install git+<repo>`), which cannot be
    marked `verified` in a recipe.
@@ -16,7 +16,7 @@ registration.
    `assets/catalog.json` is fully regenerated from the awesome-tuis README by
    `scripts/gen_catalog.py`, which has no "extras" mechanism — so a hand-added
    entry in `catalog.json` is clobbered on the next regeneration. Registering
-   CastTUI durably means adding an `EXTRA_APPS` list to that generator (CastTUI
+   casttui durably means adding an `EXTRA_APPS` list to that generator (casttui
    is not in awesome-tuis). Until that exists, treat the entry below as a patch
    to re-apply, not a committed line.
 
@@ -27,7 +27,7 @@ alpha-within-category ordering:
 
 ```json
 {
- "name": "CastTUI",
+ "name": "casttui",
  "bin": "casttui",
  "category": "Multimedia",
  "description": "Terminal remote for Chromecast: cast local files, URLs, YouTube and web pages, with a live progress bar and playback controls.",
@@ -37,12 +37,12 @@ alpha-within-category ordering:
 
 ## Install recipe (`assets/recipes.json`)
 
-Keyed by display name, alpha-sorted. Mark `verified: false` until CastTUI is on
+Keyed by display name, alpha-sorted. Mark `verified: false` until casttui is on
 PyPI, then switch the command to `pipx install casttui` (or
 `uv tool install casttui`) and set `verified: true`:
 
 ```json
-"CastTUI": {
+"casttui": {
  "install": "pipx install casttui",
  "method": "pipx",
  "os": ["macos", "linux"],
@@ -51,7 +51,7 @@ PyPI, then switch the command to `pipx install casttui` (or
 }
 ```
 
-`requires_cwd` is intentionally omitted (false): CastTUI does not operate on a
+`requires_cwd` is intentionally omitted (false): casttui does not operate on a
 project tree.
 
 ## Launcher
