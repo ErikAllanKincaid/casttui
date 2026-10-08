@@ -32,6 +32,11 @@ LIKELY_UNSUPPORTED_VIDEO = {
 }
 
 
+def has_ffmpeg() -> bool:
+    """Whether ffmpeg is on PATH (required for the transcode option)."""
+    return shutil.which("ffmpeg") is not None
+
+
 def video_codec(path: str) -> Optional[str]:
     """The file's video codec name (lowercase), or None if unknown."""
     if not shutil.which("ffprobe"):

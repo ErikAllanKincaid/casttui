@@ -23,3 +23,10 @@ def test_no_warning_when_codec_unknown(monkeypatch):
 def test_video_codec_none_without_ffprobe(monkeypatch):
     monkeypatch.setattr(media.shutil, "which", lambda _: None)
     assert media.video_codec("/x.mp4") is None
+
+
+def test_has_ffmpeg(monkeypatch):
+    monkeypatch.setattr(media.shutil, "which", lambda n: "/usr/bin/ffmpeg")
+    assert media.has_ffmpeg() is True
+    monkeypatch.setattr(media.shutil, "which", lambda n: None)
+    assert media.has_ffmpeg() is False

@@ -13,11 +13,19 @@ def test_defaults_when_missing(tmp_path):
 
 def test_save_then_load_roundtrip(tmp_path):
     p = tmp_path / "config.toml"
-    Config(last_device="Living Room TV", seek_step=30, volume_step=0.25).save(p)
+    Config(
+        last_device="Living Room TV", seek_step=30, volume_step=0.25,
+        transcode=False,
+    ).save(p)
     cfg = Config.load(p)
     assert cfg.last_device == "Living Room TV"
     assert cfg.seek_step == 30
     assert cfg.volume_step == 0.25
+    assert cfg.transcode is False
+
+
+def test_transcode_defaults_true(tmp_path):
+    assert Config.load(tmp_path / "nope.toml").transcode is True
 
 
 def test_save_creates_parent_dirs(tmp_path):

@@ -91,6 +91,34 @@ async def test_auto_reconnects_to_last_device():
 
 
 @pytest.mark.asyncio
+async def test_serve_file_transcodes_unsupported_when_enabled(monkeypatch):
+    import casttui.app as appmod
+
+    svc = fake_service()
+    svc.play_file = MagicMock(return_value="clip")  # type: ignore[method-assign]
+    monkeypatch.setattr(appmod, "unsupported_warning", lambda p: "av1 bad")
+    monkeypatch.setattr(appmod, "has_ffmpeg", lambda: True)
+    app = make_app(svc, config=Config(transcode=True))
+    title, warning, transcoded = app._serve_file("/x.mkv")
+    assert transcoded is True
+    svc.play_file.assert_called_once_with("/x.mkv", transcode=True)
+
+
+@pytest.mark.asyncio
+async def test_serve_file_warns_when_transcode_disabled(monkeypatch):
+    import casttui.app as appmod
+
+    svc = fake_service()
+    svc.play_file = MagicMock(return_value="clip")  # type: ignore[method-assign]
+    monkeypatch.setattr(appmod, "unsupported_warning", lambda p: "av1 bad")
+    monkeypatch.setattr(appmod, "has_ffmpeg", lambda: True)
+    app = make_app(svc, config=Config(transcode=False))
+    _, warning, transcoded = app._serve_file("/x.mkv")
+    assert transcoded is False and warning == "av1 bad"
+    svc.play_file.assert_called_once_with("/x.mkv", transcode=False)
+
+
+@pytest.mark.asyncio
 async def test_now_playing_refreshes_from_snapshot():
     svc = fake_service()
     dev = MagicMock()

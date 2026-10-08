@@ -26,6 +26,9 @@ class Config:
     last_device: str | None = None
     seek_step: int = 10
     volume_step: float = 0.1
+    # When true, files with a codec the Chromecast cannot decode are transcoded
+    # to H.264/AAC on the fly via ffmpeg (uses CPU). False → warn and skip.
+    transcode: bool = True
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":
@@ -41,6 +44,8 @@ class Config:
             cfg.seek_step = data["seek_step"]
         if isinstance(data.get("volume_step"), (int, float)):
             cfg.volume_step = float(data["volume_step"])
+        if isinstance(data.get("transcode"), bool):
+            cfg.transcode = data["transcode"]
         return cfg
 
     def save(self, path: Path | None = None) -> None:

@@ -36,7 +36,7 @@ from textual.widgets import (
 )
 
 from .config import Config
-from .media import unsupported_warning
+from .media import has_ffmpeg, unsupported_warning
 from .service import CastService, Status
 
 VIEWS = ("devices", "cast", "nowplaying")
@@ -329,22 +329,32 @@ class CastTUI(App):
             return
         self.message(f"Serving and casting {path.name}…")
         try:
-            title, warning = await asyncio.to_thread(self._serve_file, str(path))
+            title, warning, transcoded = await asyncio.to_thread(
+                self._serve_file, str(path)
+            )
         except Exception as exc:  # noqa: BLE001
             self.message(f"Playback failed: {exc}", error=True)
             return
         self.query_one("#np-title", Static).update(title or path.name)
-        if warning:
+        if transcoded:
+            # VLC-style notice: conversion is CPU-heavy but works on a capable PC.
+            self.message(f"Converting {path.name} on the fly (uses CPU) — casting")
+        elif warning:
             self.message(f"{path.name}: {warning}", error=True)
         else:
             self.message(f"Casting {path.name}")
         self._show("nowplaying")
 
-    def _serve_file(self, path: str) -> tuple[str, str | None]:
-        """Probe for an unplayable codec, then cast (runs off the UI thread)."""
+    def _serve_file(self, path: str) -> tuple[str, str | None, bool]:
+        """Probe for an unplayable codec, then cast (runs off the UI thread).
+
+        If the codec is unsupported and transcoding is enabled and ffmpeg is
+        present, cast a live H.264 transcode instead of warning-and-skipping.
+        """
         warning = unsupported_warning(path)
-        title = self.service.play_file(path)
-        return title, warning
+        transcode = bool(warning) and self.cfg.transcode and has_ffmpeg()
+        title = self.service.play_file(path, transcode=transcode)
+        return title, warning, transcode
 
     # -- live now-playing refresh ----------------------------------------
 

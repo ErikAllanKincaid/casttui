@@ -22,7 +22,7 @@ from catt.controllers import get_app, get_controller
 from catt.stream_info import StreamInfo
 from pychromecast.controllers.media import MediaStatusListener
 
-from .fileserver import FileServer
+from .fileserver import FileServer, TranscodeServer
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ class CastService:
         self._lock = threading.Lock()
         self._status = Status()
         self._updated_at = time.monotonic()
-        self._fileserver: Optional[FileServer] = None
+        self._fileserver: Optional[FileServer | TranscodeServer] = None
 
     # -- discovery / selection -------------------------------------------
 
@@ -132,8 +132,14 @@ class CastService:
         self._stop_fileserver()
         self._require().play_url(url)
 
-    def play_file(self, path: str) -> str:
+    def play_file(
+        self, path: str, transcode: bool = False, scale: Optional[int] = None
+    ) -> str:
         """Serve ``path`` over the LAN and cast it. Returns the media title.
+
+        With ``transcode``, ffmpeg re-encodes to Chromecast-safe H.264/AAC on
+        the fly (for AV1/HEVC/etc. the device cannot decode); ``scale`` caps
+        the output height. Otherwise the raw file is served with range support.
 
         Raises RuntimeError if the path is not a playable local file or if the
         host's LAN IP (reachable by the Chromecast) could not be determined.
@@ -148,12 +154,17 @@ class CastService:
                 "(same subnet?)"
             )
         self._stop_fileserver()
-        server = FileServer(
-            str(path),
-            stream.local_ip,
-            stream.port,
-            stream.guessed_content_type,
-        )
+        if transcode:
+            server: FileServer | TranscodeServer = TranscodeServer(
+                str(path), stream.local_ip, stream.port, scale
+            )
+        else:
+            server = FileServer(
+                str(path),
+                stream.local_ip,
+                stream.port,
+                stream.guessed_content_type,
+            )
         server.start()
         self._fileserver = server
         try:

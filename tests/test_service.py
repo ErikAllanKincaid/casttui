@@ -176,12 +176,18 @@ class FakeServer:
         self.stopped = True
 
 
+class FakeTranscodeServer(FakeServer):
+    instances: list["FakeTranscodeServer"] = []
+
+
 def patch_file(monkeypatch, stream=None):
     import casttui.service as svcmod
 
     FakeServer.instances = []
+    FakeTranscodeServer.instances = []
     monkeypatch.setattr(svcmod, "StreamInfo", lambda *a, **k: stream or FakeStream())
     monkeypatch.setattr(svcmod, "FileServer", FakeServer)
+    monkeypatch.setattr(svcmod, "TranscodeServer", FakeTranscodeServer)
 
 
 def test_play_file_serves_and_casts(monkeypatch):
@@ -195,6 +201,16 @@ def test_play_file_serves_and_casts(monkeypatch):
     assert server.started
     dev.play_url.assert_called_once_with(server.url)
     assert svc._fileserver is server
+
+
+def test_play_file_transcode_uses_transcode_server(monkeypatch):
+    patch_file(monkeypatch)
+    svc = CastService()
+    dev = make_device()
+    svc.select(dev)
+    svc.play_file("/home/u/clip.mkv", transcode=True)
+    assert isinstance(svc._fileserver, FakeTranscodeServer)
+    dev.play_url.assert_called_once_with(svc._fileserver.url)
 
 
 def test_stop_tears_down_fileserver(monkeypatch):
