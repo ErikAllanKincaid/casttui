@@ -51,11 +51,18 @@ CastTUI casts through catt/pychromecast's **Default Media Receiver**, whose
 codec support is narrower than a device's native decoder. H.264 video +
 AAC/MP3 audio is the safe combination. A file whose video codec the receiver
 does not accept (AV1, HEVC, …) may play as **audio only**; if `ffprobe` is
-installed, CastTUI warns about this before playing. (Chrome can still play such
-files via media remoting, which hands the stream to the device's own decoder —
-no transcoding, a different path than the Default Media Receiver.) CastTUI does
-not transcode (SCOPE §2). The warning is a best-effort heuristic; a device with
-native support (e.g. Chromecast with Google TV) may play more than it predicts.
+installed, CastTUI warns about this before playing. CastTUI does not transcode
+(SCOPE §2).
+
+Chrome can still play such a file, but not through the device's decoder: when
+the device lacks the codec, Chrome falls back to **tab mirroring**, decoding the
+video itself and re-encoding the rendered output to H.264/VP8 in real time, so
+the device only ever receives a codec it supports. (This is why Chrome plays
+AV1 — it bundles a software AV1 decoder — but not HEVC on Linux, where it has no
+HEVC decoder.) catt/CastTUI has no such decode-and-mirror pipeline. The warning
+is a best-effort heuristic; a device with native support (e.g. Chromecast with
+Google TV) can play more than it predicts, and a basic Chromecast (H.264/VP8
+only) less.
 
 ## Config
 
