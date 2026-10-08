@@ -1,0 +1,388 @@
+"""CastTUI Textual app — Milestone 3.
+
+Three views cycled with Tab (SCOPE_CastTUI.md §6):
+
+- **Devices**: discovered Chromecasts as clickable buttons + rescan.
+- **Cast**: sources — a local-file browser (served over catt's HTTP server,
+  see ``fileserver.py``) and a direct-URL field.
+- **Now playing**: live progress bar, state + volume, and control buttons.
+
+Blocking catt calls (discover, play_url, play_file, connect) run in threads via
+``asyncio.to_thread`` so the UI never freezes. Status reaches the UI by a
+0.25 s timer that reads :meth:`CastService.snapshot`, which the pychromecast
+background thread keeps fresh.
+
+Messages (info, warnings, errors) render on a persistent one-line bar above the
+footer rather than as overlay toasts, so they never cover the controls.
+"""
+from __future__ import annotations
+
+import asyncio
+import shutil
+import subprocess
+from pathlib import Path
+
+from textual import events
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, Vertical
+from textual.widgets import (
+    Button,
+    DirectoryTree,
+    Footer,
+    Header,
+    Input,
+    Static,
+)
+
+from .service import CastService, Status
+
+SEEK_STEP = 10  # seconds
+VOL_STEP = 0.1  # 0.0–1.0
+VIEWS = ("devices", "cast", "nowplaying")
+
+
+def fmt_time(seconds: float | None) -> str:
+    if seconds is None:
+        return "--:--"
+    s = int(seconds)
+    return f"{s // 60:02d}:{s % 60:02d}"
+
+
+def progress_bar(position: float, duration: float | None, width: int = 40) -> str:
+    """A plain-text bar; handles unknown duration gracefully."""
+    if not duration or duration <= 0:
+        return "─" * width  # stream with no known length
+    filled = max(0, min(width, round(width * position / duration)))
+    return "█" * filled + "░" * (width - filled)
+
+
+def primary_selection() -> str:
+    """The X PRIMARY selection (middle-click paste source), or ''."""
+    for cmd in (["xclip", "-o", "-selection", "primary"], ["xsel", "-o", "-p"]):
+        if shutil.which(cmd[0]):
+            try:
+                out = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=1
+                )
+                if out.returncode == 0:
+                    return out.stdout
+            except Exception:  # noqa: BLE001
+                pass
+    return ""
+
+
+class DevicesView(Vertical):
+    def compose(self) -> ComposeResult:
+        yield Static("Devices", classes="view-title")
+        yield Static("Scanning the network…", id="devices-status", markup=False)
+        yield Vertical(id="device-list")
+        yield Button("Rescan (r)", id="rescan", variant="primary")
+
+
+class CastView(Vertical):
+    def compose(self) -> ComposeResult:
+        yield Static("Cast", classes="view-title")
+        yield Static(
+            "Pick a local file to cast, or paste a direct media URL.",
+            id="cast-hint",
+            markup=False,
+        )
+        yield DirectoryTree(str(Path.home()), id="files")
+        with Horizontal(id="url-row"):
+            yield Input(
+                placeholder="Direct media URL — Enter or middle-click to paste",
+                id="url",
+            )
+            yield Button("Cast URL", id="cast-url", variant="primary")
+
+
+class NowPlayingView(Vertical):
+    def compose(self) -> ComposeResult:
+        yield Static("Now playing", classes="view-title")
+        # markup=False: titles / state text may contain "[" that Textual would
+        # otherwise parse as console markup.
+        yield Static("Nothing playing.", id="np-title", markup=False)
+        yield Static("", id="np-bar", markup=False)
+        yield Static("", id="np-state", markup=False)
+        with Horizontal(id="controls"):
+            yield Button("⏮", id="rewind")
+            yield Button("⏯", id="playpause")
+            yield Button("⏹", id="stop")
+            yield Button("⏭", id="ffwd")
+            yield Button("🔉", id="voldown")
+            yield Button("🔊", id="volup")
+            yield Button("🔇", id="mute")
+            yield Button("↦end", id="skip")
+
+
+class CastTUI(App):
+    CSS = """
+    .view-title { text-style: bold; color: $accent; padding: 1 0 0 1; }
+    #devices-status, #cast-hint { padding: 0 1; color: $text-muted; }
+    #device-list { padding: 1; height: auto; }
+    #device-list Button { width: 100%; margin-bottom: 1; }
+    #files { height: 1fr; margin: 1; border: round $panel; }
+    #url-row { height: auto; padding: 0 1 1 1; }
+    #url { width: 1fr; }
+    #np-title { padding: 1 1 0 1; text-style: bold; }
+    #np-bar { padding: 0 1; color: $success; }
+    #np-state { padding: 0 1; color: $text-muted; }
+    #controls { height: auto; padding: 1; align: center middle; }
+    #controls Button { margin: 0 1; min-width: 6; }
+    #message { dock: bottom; height: 1; padding: 0 1; background: $panel;
+               color: $text-muted; }
+    """
+
+    BINDINGS = [
+        Binding("tab", "switch_view", "Switch view", priority=True),
+        ("r", "rescan", "Rescan"),
+        ("space", "playpause", "Play/Pause"),
+        ("left", "rewind", "Seek −"),
+        ("right", "ffwd", "Seek +"),
+        ("up", "volup", "Vol +"),
+        ("down", "voldown", "Vol −"),
+        ("plus", "volup", "Vol +"),
+        ("minus", "voldown", "Vol −"),
+        ("m", "mute", "Mute"),
+        ("s", "stop", "Stop"),
+        ("n", "skip", "Skip"),
+        ("q", "quit", "Quit"),
+    ]
+
+    def __init__(self, service: CastService | None = None) -> None:
+        super().__init__()
+        self.service = service or CastService()
+        self._view = "devices"
+        self._muted = False
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        with Container(id="body"):
+            yield DevicesView(id="devices")
+            yield CastView(id="cast")
+            yield NowPlayingView(id="nowplaying")
+        yield Static("", id="message", markup=False)
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.title = "CastTUI"
+        self._show("devices")
+        self.set_interval(0.25, self._refresh_now_playing)
+        self.run_worker(self._scan(), exclusive=True)
+
+    def on_unmount(self) -> None:
+        self.service.close()
+
+    # -- messages (persistent line, not overlay toasts) ------------------
+
+    def message(self, text: str, error: bool = False) -> None:
+        line = self.query_one("#message", Static)
+        line.update(text)
+        line.styles.color = "red" if error else None
+
+    # -- view switching ---------------------------------------------------
+
+    def _show(self, view: str) -> None:
+        self._view = view
+        for v in VIEWS:
+            self.query_one(f"#{v}").display = v == view
+        self.sub_title = view.replace("nowplaying", "now playing")
+
+    def action_switch_view(self) -> None:
+        self._show(VIEWS[(VIEWS.index(self._view) + 1) % len(VIEWS)])
+
+    # -- discovery --------------------------------------------------------
+
+    async def _scan(self) -> None:
+        status = self.query_one("#devices-status", Static)
+        status.update("Scanning the network…")
+        try:
+            devices = await asyncio.to_thread(self.service.discover)
+        except Exception as exc:  # noqa: BLE001
+            status.update(f"Discovery failed: {exc}")
+            return
+        lst = self.query_one("#device-list", Vertical)
+        await lst.remove_children()
+        if not devices:
+            status.update("No Chromecasts found. Press r to rescan.")
+            return
+        status.update(f"{len(devices)} device(s) found — click one to select:")
+        for d in devices:
+            btn = Button(f"{d.name}  ({d.ip_addr})", classes="device")
+            btn.cast_device = d  # type: ignore[attr-defined]
+            await lst.mount(btn)
+
+    def action_rescan(self) -> None:
+        self.run_worker(self._scan(), exclusive=True)
+
+    async def _select(self, device) -> None:
+        try:
+            await asyncio.to_thread(self.service.select, device)
+        except Exception as exc:  # noqa: BLE001
+            self.message(f"Could not connect: {exc}", error=True)
+            return
+        self.message(f"Connected to {device.name}")
+        self._show("cast")
+
+    # -- casting ----------------------------------------------------------
+
+    def _need_device(self) -> bool:
+        if self.service.device is None:
+            self.message("Select a device first (Tab → Devices).", error=True)
+            self._show("devices")
+            return False
+        return True
+
+    async def _cast_url(self) -> None:
+        if not self._need_device():
+            return
+        url = self.query_one("#url", Input).value.strip()
+        if not url:
+            return
+        self.message(f"Casting {url}")
+        try:
+            await asyncio.to_thread(self.service.play_url, url)
+        except Exception as exc:  # noqa: BLE001
+            self.message(f"Playback failed: {exc}", error=True)
+            return
+        self.query_one("#np-title", Static).update(url.rsplit("/", 1)[-1])
+        self._show("nowplaying")
+
+    async def _cast_file(self, path: Path) -> None:
+        if not self._need_device():
+            return
+        self.message(f"Serving and casting {path.name}…")
+        try:
+            title = await asyncio.to_thread(self.service.play_file, str(path))
+        except Exception as exc:  # noqa: BLE001
+            self.message(f"Playback failed: {exc}", error=True)
+            return
+        self.query_one("#np-title", Static).update(title or path.name)
+        self.message(f"Casting {path.name}")
+        self._show("nowplaying")
+
+    # -- live now-playing refresh ----------------------------------------
+
+    def _refresh_now_playing(self) -> None:
+        if self.service.device is None:
+            return
+        s = self.service.snapshot()
+        bar = progress_bar(s.position, s.duration)
+        self.query_one("#np-bar", Static).update(
+            f"{bar}  {fmt_time(s.position)} / {fmt_time(s.duration)}"
+        )
+        if s.title:
+            self.query_one("#np-title", Static).update(s.title)
+        vol = f"{int(s.volume * 100)}%" if s.volume is not None else "--"
+        mute = " (muted)" if s.muted else ""
+        err = f"   ⚠ {s.error}" if s.error else ""
+        self.query_one("#np-state", Static).update(
+            f"{s.state}  ·  vol {vol}{mute}{err}"
+        )
+        self._muted = s.muted
+
+    # -- playback actions (threaded; guard on no device) -----------------
+
+    def _act(self, fn, *args) -> None:
+        if self.service.device is None:
+            self.message("No device selected.", error=True)
+            return
+
+        async def run():
+            try:
+                await asyncio.to_thread(fn, *args)
+            except Exception as exc:  # noqa: BLE001
+                self.message(f"{fn.__name__} failed: {exc}", error=True)
+
+        self.run_worker(run())
+
+    def action_playpause(self) -> None:
+        state = self.service.snapshot().state
+        self._act(self.service.pause if state == "PLAYING" else self.service.play)
+
+    def action_rewind(self) -> None:
+        self._act(self.service.rewind, SEEK_STEP)
+
+    def action_ffwd(self) -> None:
+        self._act(self.service.ffwd, SEEK_STEP)
+
+    def action_volup(self) -> None:
+        self._act(self.service.volumeup, VOL_STEP)
+
+    def action_voldown(self) -> None:
+        self._act(self.service.volumedown, VOL_STEP)
+
+    def action_mute(self) -> None:
+        self._act(self.service.mute, not self._muted)
+
+    def action_stop(self) -> None:
+        if self.service.device is None:
+            self.message("No device selected.", error=True)
+            return
+
+        async def run():
+            try:
+                await asyncio.to_thread(self.service.stop)
+            except Exception as exc:  # noqa: BLE001
+                self.message(f"stop failed: {exc}", error=True)
+                return
+            self.query_one("#np-title", Static).update("Nothing playing.")
+            self.query_one("#np-bar", Static).update("")
+            self.query_one("#np-state", Static).update("")
+            self.message("Stopped.")
+
+        self.run_worker(run())
+
+    def action_skip(self) -> None:
+        dur = self.service.snapshot().duration
+        if dur:
+            self._act(self.service.seek, int(dur) - 1)
+
+    # -- widget events ----------------------------------------------------
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn = event.button
+        if getattr(btn, "cast_device", None) is not None:
+            self.run_worker(self._select(btn.cast_device))
+            return
+        actions = {
+            "rescan": self.action_rescan,
+            "cast-url": lambda: self.run_worker(self._cast_url()),
+            "rewind": self.action_rewind,
+            "playpause": self.action_playpause,
+            "stop": self.action_stop,
+            "ffwd": self.action_ffwd,
+            "voldown": self.action_voldown,
+            "volup": self.action_volup,
+            "mute": self.action_mute,
+            "skip": self.action_skip,
+        }
+        action = actions.get(btn.id or "")
+        if action:
+            action()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "url":
+            self.run_worker(self._cast_url())
+
+    def on_directory_tree_file_selected(
+        self, event: DirectoryTree.FileSelected
+    ) -> None:
+        self.run_worker(self._cast_file(Path(event.path)))
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        # Middle-click pastes the X PRIMARY selection into the focused Input.
+        if event.button == 2 and isinstance(self.focused, Input):
+            text = primary_selection().strip()
+            if text:
+                self.focused.value = text
+                self.focused.cursor_position = len(text)
+
+
+def main() -> None:
+    CastTUI().run()
+
+
+if __name__ == "__main__":
+    main()

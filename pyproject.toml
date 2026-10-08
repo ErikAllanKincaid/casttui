@@ -6,7 +6,27 @@ readme = "README.md"
 requires-python = ">=3.11"
 # Depend on catt as a library (import catt.api / catt.controllers), tracking
 # upstream, per SCOPE_CastTUI.md §12. catt pulls in pychromecast + yt-dlp.
-# Textual is added when the UI work starts (Milestone 2); the spike needs only catt.
+# Textual is the TUI framework (Milestone 2+); see SCOPE_CastTUI.md §4.
 dependencies = [
     "catt>=0.13",
+    "textual>=0.80",
 ]
+
+[project.scripts]
+casttui = "casttui.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/casttui"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
