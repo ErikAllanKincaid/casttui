@@ -47,6 +47,12 @@ Local files are served to the Chromecast over HTTP from this host, so the two
 must share a LAN subnet (SCOPE §8/§12). `xclip` or `xsel` enables middle-click
 paste into the URL field.
 
+CastTUI does not transcode (SCOPE §2). The Chromecast must be able to decode the
+file itself — H.264 video + AAC/MP3 audio is the safe combination. A file with
+an unsupported video codec (AV1, HEVC, …) may play as **audio only**; if
+`ffprobe` is installed, CastTUI warns about this before playing. (Chrome's tab
+casting works on such files because Chrome transcodes them first.)
+
 ## Config
 
 `~/.config/casttui/config.toml` (override dir with `$XDG_CONFIG_HOME`). Written

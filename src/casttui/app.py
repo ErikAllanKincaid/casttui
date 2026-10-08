@@ -25,7 +25,7 @@ from pathlib import Path
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Button,
     DirectoryTree,
@@ -36,6 +36,7 @@ from textual.widgets import (
 )
 
 from .config import Config
+from .media import unsupported_warning
 from .service import CastService, Status
 
 VIEWS = ("devices", "cast", "nowplaying")
@@ -72,7 +73,7 @@ def primary_selection() -> str:
     return ""
 
 
-class DevicesView(Vertical):
+class DevicesView(VerticalScroll):
     def compose(self) -> ComposeResult:
         yield Static("Devices", classes="view-title")
         yield Static("Scanning the network…", id="devices-status", markup=False)
@@ -89,14 +90,16 @@ class CastView(Vertical):
             markup=False,
         )
         yield DirectoryTree(str(Path.home()), id="files")
-        yield Input(
-            placeholder="URL — Enter/middle-click to paste; then pick a button",
-            id="url",
-        )
-        with Horizontal(id="url-row"):
-            yield Button("Cast URL", id="cast-url", variant="primary")
-            yield Button("YouTube / site", id="cast-stream")
-            yield Button("Web page", id="cast-site")
+        # Docked to the view bottom so they never scroll out of reach.
+        with Vertical(id="cast-actions"):
+            yield Input(
+                placeholder="URL — Enter/middle-click to paste; then pick a button",
+                id="url",
+            )
+            with Horizontal(id="url-row"):
+                yield Button("Cast URL", id="cast-url", variant="primary")
+                yield Button("YouTube / site", id="cast-stream")
+                yield Button("Web page", id="cast-site")
 
 
 class NowPlayingView(Vertical):
@@ -104,9 +107,11 @@ class NowPlayingView(Vertical):
         yield Static("Now playing", classes="view-title")
         # markup=False: titles / state text may contain "[" that Textual would
         # otherwise parse as console markup.
-        yield Static("Nothing playing.", id="np-title", markup=False)
-        yield Static("", id="np-bar", markup=False)
-        yield Static("", id="np-state", markup=False)
+        with VerticalScroll(id="np-info"):
+            yield Static("Nothing playing.", id="np-title", markup=False)
+            yield Static("", id="np-bar", markup=False)
+            yield Static("", id="np-state", markup=False)
+        # Docked to the view bottom so the controls are always visible.
         with Horizontal(id="controls"):
             yield Button("⏮", id="rewind")
             yield Button("⏯", id="playpause")
@@ -120,18 +125,23 @@ class NowPlayingView(Vertical):
 
 class CastTUI(App):
     CSS = """
+    #body { height: 1fr; }
+    #devices, #cast, #nowplaying { height: 100%; }
     .view-title { text-style: bold; color: $accent; padding: 1 0 0 1; }
     #devices-status, #cast-hint { padding: 0 1; color: $text-muted; }
     #device-list { padding: 1; height: auto; }
     #device-list Button { width: 100%; margin-bottom: 1; }
     #files { height: 1fr; margin: 1; border: round $panel; }
+    #cast-actions { dock: bottom; height: auto; background: $surface; }
     #url { margin: 0 1; }
     #url-row { height: auto; padding: 0 1 1 1; }
     #url-row Button { margin-right: 1; }
+    #np-info { height: 1fr; }
     #np-title { padding: 1 1 0 1; text-style: bold; }
     #np-bar { padding: 0 1; color: $success; }
     #np-state { padding: 0 1; color: $text-muted; }
-    #controls { height: auto; padding: 1; align: center middle; }
+    #controls { dock: bottom; height: auto; padding: 1; align: center middle;
+                background: $surface; }
     #controls Button { margin: 0 1; min-width: 6; }
     #message { dock: bottom; height: 1; padding: 0 1; background: $panel;
                color: $text-muted; }
@@ -142,6 +152,9 @@ class CastTUI(App):
     .-narrow #controls { padding: 1 0; }
     .-narrow #controls Button { min-width: 3; margin: 0; }
     .-narrow #files { margin: 0 1; }
+    /* Stack the wide source buttons so they do not overflow a narrow width. */
+    .-narrow #url-row { layout: vertical; height: auto; }
+    .-narrow #url-row Button { width: 100%; margin: 0 0 1 0; }
     """
 
     BINDINGS = [
@@ -316,13 +329,22 @@ class CastTUI(App):
             return
         self.message(f"Serving and casting {path.name}…")
         try:
-            title = await asyncio.to_thread(self.service.play_file, str(path))
+            title, warning = await asyncio.to_thread(self._serve_file, str(path))
         except Exception as exc:  # noqa: BLE001
             self.message(f"Playback failed: {exc}", error=True)
             return
         self.query_one("#np-title", Static).update(title or path.name)
-        self.message(f"Casting {path.name}")
+        if warning:
+            self.message(f"{path.name}: {warning}", error=True)
+        else:
+            self.message(f"Casting {path.name}")
         self._show("nowplaying")
+
+    def _serve_file(self, path: str) -> tuple[str, str | None]:
+        """Probe for an unplayable codec, then cast (runs off the UI thread)."""
+        warning = unsupported_warning(path)
+        title = self.service.play_file(path)
+        return title, warning
 
     # -- live now-playing refresh ----------------------------------------
 
