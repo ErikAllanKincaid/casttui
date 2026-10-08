@@ -1,4 +1,4 @@
-"""CastTUI Textual app — Milestone 3.
+"""casttui Textual app — Milestone 3.
 
 Three views cycled with Tab (SCOPE_CastTUI.md §6):
 
@@ -59,17 +59,26 @@ def progress_bar(position: float, duration: float | None, width: int = 40) -> st
 
 
 def primary_selection() -> str:
-    """The X PRIMARY selection (middle-click paste source), or ''."""
-    for cmd in (["xclip", "-o", "-selection", "primary"], ["xsel", "-o", "-p"]):
+    """The local PRIMARY selection (middle-click paste source), or ''.
+
+    Only works when casttui runs on the same machine as the X/Wayland
+    session that owns the selection. Over SSH the selection lives on the
+    *client's* display, unreachable from here — use Shift+middle-click so
+    the terminal itself pastes it (see the Cast-view hint). Tries X11
+    (xclip/xsel) then Wayland (wl-paste), first non-empty result wins.
+    """
+    for cmd in (
+        ["xclip", "-o", "-selection", "primary"],
+        ["xsel", "-o", "-p"],
+        ["wl-paste", "-p", "-n"],
+    ):
         if shutil.which(cmd[0]):
             try:
-                out = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=1
-                )
-                if out.returncode == 0:
-                    return out.stdout
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=1)
             except Exception:  # noqa: BLE001
-                pass
+                continue
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout
     return ""
 
 
@@ -85,7 +94,10 @@ class CastView(Vertical):
     def compose(self) -> ComposeResult:
         yield Static("Cast", classes="view-title")
         yield Static(
-            "Pick a local file to cast, or paste a direct media URL.",
+            "Pick a local file, or paste a URL — then a button: Cast URL "
+            "(direct media), YouTube / site (yt-dlp), or Web page (show the "
+            "site). Paste with Shift+Ctrl+V (clipboard) or Shift+middle-click "
+            "(selection); plain middle-click only works running locally.",
             id="cast-hint",
             markup=False,
         )
@@ -93,7 +105,7 @@ class CastView(Vertical):
         # Docked to the view bottom so they never scroll out of reach.
         with Vertical(id="cast-actions"):
             yield Input(
-                placeholder="URL — Enter/middle-click to paste; then pick a button",
+                placeholder="URL — Shift+Ctrl+V or Shift+middle-click to paste",
                 id="url",
             )
             with Horizontal(id="url-row"):
@@ -194,7 +206,7 @@ class CastTUI(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "CastTUI"
+        self.title = "casttui"
         self._show("devices")
         self.set_interval(0.25, self._refresh_now_playing)
         self.run_worker(self._scan(), exclusive=True)
@@ -468,12 +480,23 @@ class CastTUI(App):
         self.run_worker(self._cast_file(Path(event.path)))
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
-        # Middle-click pastes the X PRIMARY selection into the focused Input.
-        if event.button == 2 and isinstance(self.focused, Input):
+        # Middle-click pastes the PRIMARY selection into the Input. Clicking a
+        # focusable widget focuses it first, so self.focused is the Input here;
+        # fall back to the widget under the pointer for the rare timing miss.
+        if event.button != 2:
+            return
+        target = self.focused
+        if not isinstance(target, Input):
+            try:
+                under = self.screen.get_widget_at(event.screen_x, event.screen_y)[0]
+            except Exception:  # noqa: BLE001
+                under = None
+            target = under if isinstance(under, Input) else None
+        if isinstance(target, Input):
             text = primary_selection().strip()
             if text:
-                self.focused.value = text
-                self.focused.cursor_position = len(text)
+                target.focus()
+                target.insert_text_at_cursor(text)
 
 
 def main() -> None:

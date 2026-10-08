@@ -119,6 +119,35 @@ async def test_serve_file_warns_when_transcode_disabled(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_middle_click_pastes_primary_into_url(monkeypatch):
+    import casttui.app as appmod
+
+    monkeypatch.setattr(appmod, "primary_selection", lambda: "http://host/clip.mp4\n")
+    app = make_app(fake_service())
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("tab")  # Cast view
+        await pilot.pause()
+        # Middle-click the URL box without focusing it first.
+        await pilot.mouse_down("#url", button=2)
+        await pilot.pause()
+        assert app.query_one("#url").value == "http://host/clip.mp4"  # type: ignore[attr-defined]
+
+
+def test_primary_selection_skips_empty_tool(monkeypatch):
+    import casttui.app as appmod
+
+    monkeypatch.setattr(appmod.shutil, "which", lambda name: "/usr/bin/" + name)
+
+    def fake_run(cmd, **kw):
+        out = "picked\n" if cmd[0] == "xsel" else ""
+        return MagicMock(returncode=0, stdout=out)
+
+    monkeypatch.setattr(appmod.subprocess, "run", fake_run)
+    assert appmod.primary_selection() == "picked\n"
+
+
+@pytest.mark.asyncio
 async def test_now_playing_refreshes_from_snapshot():
     svc = fake_service()
     dev = MagicMock()
