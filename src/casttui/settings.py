@@ -34,6 +34,8 @@ SETTINGS: tuple[Setting, ...] = (
             ("auto", "ascii", "unicode")),
     Setting("colors", "auto", "Colour depth: auto, mono, 16 or 256",
             ("auto", "mono", "16", "256")),
+    Setting("history", True, "Keep History across runs (~/.local/state/casttui/history.jsonl)",
+            (True, False)),
     Setting("start_dir", "", "Folder the Source pane opens in, empty is the current folder"),
     Setting("last_device", None, "Device reconnected at start (set on connect)",
             editable=False),

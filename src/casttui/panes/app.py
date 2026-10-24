@@ -22,6 +22,7 @@ from pathlib import Path
 
 import urwid
 
+from .. import history as hist
 from .. import labels as lab
 from ..cli import is_url
 from ..config import Config
@@ -46,14 +47,6 @@ class Playing:
     target: str        # path or URL
     title: str
     mode: str = ""     # direct, transcode 720p, yt-dlp, web page ...
-
-
-@dataclass
-class Entry:
-    when: str
-    text: str
-    kind: str = ""     # file, url, page: recastable; "" is information only
-    target: str = ""
 
 
 def fmt_time(seconds: float | None) -> str:
@@ -90,7 +83,7 @@ class PanesApp:
         self.scanning = False
         self.connecting = False
         self.playing: Playing | None = None
-        self.history: list[Entry] = []
+        self.history = hist.load() if self.cfg.history else []
         self.show_hidden = False
         self.focus = 0
         self.zoom = False
@@ -308,12 +301,17 @@ class PanesApp:
         self.config_list.set_items(items)
 
     def refresh_history(self) -> None:
-        items = [(f"{e.when}  {e.text}", i) for i, e in enumerate(self.history)]
+        today = hist.now()[:10]
+        items = [(f"{hist.shown_when(e.when, today):>11}  {e.text}", i)
+                 for i, e in enumerate(self.history)]
         self.history_list.set_items(items or [("(nothing yet)", None)])
 
     def note(self, text: str, kind: str = "", target: str = "") -> None:
-        self.history.insert(0, Entry(time.strftime("%H:%M"), text, kind, target))
-        del self.history[200:]
+        entry = hist.Entry(hist.now(), text, kind, target)
+        self.history.insert(0, entry)
+        del self.history[hist.KEEP:]
+        if self.cfg.history:
+            hist.append(entry)
         self.refresh_history()
 
     def say(self, text: str, error: bool = False) -> None:
@@ -382,7 +380,6 @@ class PanesApp:
             n = len(found)
             self.say(f"{n} Chromecast{'s' if n != 1 else ''} found." if n else
                      "No Chromecasts found. a adds one by address, r scans again.")
-            self.note(f"scan: {n} found")
             if self.service.device is None and not self.connecting:
                 match = next((d for d in found if d.name == self.cfg.last_device), None)
                 if match is None and self.source and n == 1:
@@ -795,6 +792,8 @@ class PanesApp:
         i = self.history_list.current()
         if i is not None:
             del self.history[i]
+            if self.cfg.history:
+                hist.rewrite(self.history)
             self.refresh_history()
 
     # -- mouse -----------------------------------------------------------------

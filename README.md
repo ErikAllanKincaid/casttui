@@ -53,7 +53,7 @@ One screen of panes, all driven from the keyboard, in plain ASCII on a bare cons
 - **Source** (2): a file browser. `enter` casts a file (video, audio or picture) or opens a folder, `backspace` goes up, `.` shows dot files. The **[u: URL or YouTube]** button (or `u` in any pane) asks for a link: paste it and press `enter`. A direct media link plays as is, and a YouTube link or any other yt-dlp site is resolved first. **[w: web page]** (or `w`) shows a whole web page on the device.
 - **Now playing** (3): title, state, volume, progress, the device, and whether the file plays directly or is transcoded.
 - **Config** (4): every setting with its value. `enter` or `+`/`-` changes it, and the change is saved at once.
-- **History** (5): what was cast this session. `enter` casts an entry again.
+- **History** (5): what was cast, kept across runs in `~/.local/state/casttui/history.jsonl` (newest 200; `history = false` turns it off). `enter` casts an entry again, `d` removes it.
 
 From any pane: `space` play/pause, `h`/`l` or arrows seek, `+`/`-` volume, `m` mute, `s` stop, `n` skip, `tab` next pane, `z` zoom a pane, `:` command line (`set KEY VALUE`, `cast PATH|URL`, `page URL`, `connect NAME|IP`, `scan`), `?` every key, `q` quit (playback continues), `Q` stop and quit. Lists move with arrows or `j`/`k`. A click focuses a pane or row and a double click acts on it, but nothing needs the mouse.
 
@@ -95,6 +95,7 @@ seek_step = 10          # seconds per seek key
 volume_step = 0.1       # 0.0-1.0 per volume key
 icons = "auto"          # ascii, unicode; auto is ascii on a bare console
 colors = "auto"         # mono, 16, 256; NO_COLOR and TETRON_WM_COLORS are honoured
+history = true          # keep History across runs (~/.local/state/casttui/history.jsonl)
 start_dir = ""          # Source pane folder, empty is the current folder
 last_device = "Living Room TV"   # set on connect (an address when added by address)
 devices = ["10.0.5.20"]          # saved addresses
