@@ -26,7 +26,7 @@ from .. import labels as lab
 from ..cli import is_url
 from ..config import Config
 from ..media import has_ffmpeg, unsupported_warning
-from ..service import CastService, is_address, model_name, served_url
+from ..service import CastService, content_type, is_address, model_name, served_url
 from ..settings import BY_KEY, SETTINGS, parse, show
 from .keys import PANES, bar_items, help_lines, keymap
 from .widgets import PALETTE, ClickRow, Live, ListPane, Pane
@@ -106,6 +106,7 @@ class PanesApp:
         self.last_click = (None, None, 0.0)
         self.tab_spans = []
         self.bar = []                   # key bar segments: (text, action)
+        self.button_click = False
         self.test_size = (120, 32)      # the size screen_text and tests assume
         self._build()
         if problems:
@@ -124,10 +125,14 @@ class PanesApp:
         self.files = ListPane()
         self.where = urwid.Text("", wrap="clip")
         self.rule = urwid.Divider(box.get("tline", "\u2500"))
-        source_body = urwid.Pile([("pack", self.where), ("pack", self.rule), self.files])
+        self.source_buttons = ClickRow(lambda: [
+            ("[u: URL or YouTube]", "url"), (" ", None), ("[w: web page]", "page")],
+            self.button)
+        source_body = urwid.Pile([("pack", self.where), ("pack", self.source_buttons),
+                                  ("pack", self.rule), self.files], focus_item=3)
         self.np = Live(self.now_playing_text)
         self.np_details = Live(self.now_playing_details)
-        self.controls = ClickRow(self.control_segments, self.run_action)
+        self.controls = ClickRow(self.control_segments, self.button)
         self.np_pile = urwid.Pile([self.np, self.controls, self.np_details])
         self.config_list = ListPane()
         self.history_list = ListPane()
@@ -494,7 +499,9 @@ class PanesApp:
         def done(result):
             title, warning, transcode = result
             mode = (f"transcode {self.cfg.transcode_scale}p" if transcode and self.cfg.transcode_scale
-                    else "transcode" if transcode else "direct")
+                    else "transcode" if transcode
+                    else "picture" if (content_type(path.name) or "").startswith("image/")
+                    else "direct")
             self.started(Playing("file", str(path), title or path.name, mode))
             self.note(f"cast {path.name}" + (" (transcode)" if transcode else ""), "file", str(path))
             if transcode:
@@ -735,8 +742,10 @@ class PanesApp:
     def do_mute(self): self.act(self.service.mute, not self.service.snapshot().muted)
     def do_stop(self): self.act_stop()
     def do_skip(self): self.act_skip()
-    def do_url(self): self.ask("url: ", lambda t: self.cast_url(t.strip()))
-    def do_page(self): self.ask("web page: ", lambda t: self.cast_page(t.strip()))
+    def do_url(self): self.ask("URL or YouTube link (paste, enter casts, esc cancels): ",
+                               lambda t: self.cast_url(t.strip()))
+    def do_page(self): self.ask("web page to show (enter, esc cancels): ",
+                                lambda t: self.cast_page(t.strip()))
     def do_command(self): self.ask(":", self.command)
     def do_quit(self): self.quit()
     def do_stop_quit(self): self.quit(stop=True)
@@ -790,6 +799,12 @@ class PanesApp:
 
     # -- mouse -----------------------------------------------------------------
 
+    def button(self, action: str) -> None:
+        """A ClickRow button: run it, and tell :meth:`clicked` this click is
+        not half of a double click on a list row."""
+        self.button_click = True
+        self.run_action(action)
+
     def clicked(self, col: int, row: int) -> None:
         """After urwid moved its focus for a click: follow it to our pane,
         and treat a second click on the same row as Enter."""
@@ -808,6 +823,11 @@ class PanesApp:
         lists = {"devices": self.devices, "source": self.files, "config": self.config_list,
                  "history": self.history_list}
         lst = lists.get(pane)
+        if self.button_click:
+            self.button_click = False
+            self.last_click = (None, None, 0.0)
+            self.layout()
+            return
         value = lst.current() if lst is not None else None
         now = time.monotonic()
         last_pane, last_value, last_t = self.last_click

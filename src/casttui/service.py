@@ -21,6 +21,7 @@ from typing import Callable, List, Optional
 from catt.api import CattDevice, discover
 from catt.controllers import get_app, get_controller
 from catt.stream_info import StreamInfo
+from catt.util import guess_mime
 from pychromecast.controllers.media import MediaStatusListener
 
 from .fileserver import FileServer, TranscodeServer
@@ -73,6 +74,15 @@ def is_address(text: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def content_type(name: str) -> Optional[str]:
+    """MIME type from a file name or URL path, or None (catt then says video/mp4).
+    catt maps .webp to the non-type "image/web"; fixed here."""
+    path = name.split("?")[0]
+    if path.lower().endswith(".webp"):
+        return "image/webp"
+    return guess_mime(path)
 
 
 def model_name(device: CattDevice) -> str:
@@ -163,7 +173,23 @@ class CastService:
     def play_url(self, url: str) -> None:
         # Switching media: drop any local-file server from a previous cast.
         self._stop_fileserver()
-        self._require().play_url(url)
+        self._cast(self._require(), url, content_type(url))
+
+    @staticmethod
+    def _cast(dev: CattDevice, url: str, ctype: Optional[str], title: Optional[str] = None) -> None:
+        """Load ``url`` on the default media receiver with its real type.
+
+        ``CattDevice.play_url`` always says video/mp4 and then waits for
+        PLAYING, so a picture fails twice: the receiver is told it is a video,
+        and a shown picture never reaches PLAYING. catt's own CLI passes the
+        type and does not wait for images; so does this.
+        """
+        dev.controller.prep_app()
+        dev.controller.play_media_url(url, content_type=ctype, title=title)
+        if ctype and ctype.startswith("image/"):
+            return
+        if not dev.controller.wait_for(["PLAYING"], timeout=10):
+            raise RuntimeError("the device did not start playing (format not supported?)")
 
     def play_file(
         self, path: str, transcode: bool = False, scale: Optional[int] = None
@@ -200,8 +226,11 @@ class CastService:
             )
         server.start()
         self._fileserver = server
+        ctype = "video/mp4" if transcode else stream.guessed_content_type
+        if ctype == "image/web":
+            ctype = "image/webp"
         try:
-            dev.play_url(server.url)
+            self._cast(dev, server.url, ctype, stream.video_title)
         except Exception:
             self._stop_fileserver()
             raise

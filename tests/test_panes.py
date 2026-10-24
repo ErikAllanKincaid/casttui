@@ -393,3 +393,28 @@ def test_now_playing_shows_everything_beside_source(media, size):
     for part in ("PLAYING", "[mute]", "device  Living Room TV", "mode    direct"):
         assert part in text, (size, part)
     assert "clip.mp4" in text  # Source still shows its files
+
+
+def test_source_has_clickable_url_and_page_buttons():
+    svc = service([device()])
+    app = make(svc, Config(last_device="Living Room TV"))
+    app.start()
+    size = (120, 32)
+    lines = screen(app, *size).splitlines()
+    row = next(i for i, line in enumerate(lines) if "[u: URL or YouTube]" in line)
+    app.top.mouse_event(size, "mouse press", 1, lines[row].index("[u: URL") + 2, row, True)
+    assert app.prompt is not None and "YouTube" in app.edit.caption
+    keys(app, *"https://www.youtube.com/watch?v=abc", "enter")
+    svc.play_stream.assert_called_once_with("https://www.youtube.com/watch?v=abc")
+    app.top.mouse_event(size, "mouse press", 1, lines[row].index("[w: web") + 2, row, True)
+    keys(app, *"https://example.com", "enter")
+    svc.cast_site.assert_called_once_with("https://example.com")
+
+
+def test_a_picture_is_shown_as_a_picture(media):
+    (media / "photo.jpg").write_bytes(b"x")
+    svc = service([device()])
+    app = make(svc, Config(last_device="Living Room TV"))
+    app.start()
+    app.cast_file(media / "photo.jpg")
+    assert app.playing.mode == "picture"

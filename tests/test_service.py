@@ -38,7 +38,7 @@ def test_actions_delegate_to_device():
     svc.rewind(10)
     svc.mute(True)
 
-    dev.play_url.assert_called_once_with("http://x/y.mp4")
+    dev.controller.play_media_url.assert_called_once_with("http://x/y.mp4", content_type="video/mp4", title=None)
     dev.play.assert_called_once()
     dev.pause.assert_called_once()
     dev.stop.assert_called_once()
@@ -199,7 +199,9 @@ def test_play_file_serves_and_casts(monkeypatch):
     assert title == "clip"
     server = FakeServer.instances[-1]
     assert server.started
-    dev.play_url.assert_called_once_with(server.url)
+    dev.controller.play_media_url.assert_called_once_with(
+        server.url, content_type="video/mp4", title="clip")
+    dev.controller.wait_for.assert_called_once_with(["PLAYING"], timeout=10)
     assert svc._fileserver is server
 
 
@@ -210,7 +212,8 @@ def test_play_file_transcode_uses_transcode_server(monkeypatch):
     svc.select(dev)
     svc.play_file("/home/u/clip.mkv", transcode=True)
     assert isinstance(svc._fileserver, FakeTranscodeServer)
-    dev.play_url.assert_called_once_with(svc._fileserver.url)
+    dev.controller.play_media_url.assert_called_once_with(
+        svc._fileserver.url, content_type="video/mp4", title="clip")
 
 
 def test_stop_tears_down_fileserver(monkeypatch):
@@ -257,6 +260,42 @@ def test_play_file_requires_lan_ip(monkeypatch):
         assert "LAN IP" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected RuntimeError")
+
+
+def test_play_file_image_sends_its_type_and_does_not_wait(monkeypatch):
+    stream = FakeStream()
+    stream.guessed_content_type = "image/jpeg"
+    patch_file(monkeypatch, stream=stream)
+    svc = CastService()
+    dev = make_device()
+    svc.select(dev)
+    svc.play_file("/home/u/photo.jpg")
+    dev.controller.play_media_url.assert_called_once_with(
+        FakeServer.instances[-1].url, content_type="image/jpeg", title="clip")
+    dev.controller.wait_for.assert_not_called()
+
+
+def test_playback_that_never_starts_raises(monkeypatch):
+    patch_file(monkeypatch)
+    svc = CastService()
+    dev = make_device()
+    dev.controller.wait_for.return_value = False
+    svc.select(dev)
+    try:
+        svc.play_file("/x.mp4")
+    except RuntimeError as exc:
+        assert "did not start playing" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected RuntimeError")
+    assert svc._fileserver is None
+
+
+def test_content_type_from_names():
+    from casttui.service import content_type
+
+    assert content_type("http://h/a/pic.WEBP?x=1") == "image/webp"
+    assert content_type("song.mp3") == "audio/mp3"
+    assert content_type("http://h/a.jpg") == "image/jpeg"
 
 
 # -- stream (yt-dlp resolve) + web page -------------------------------------

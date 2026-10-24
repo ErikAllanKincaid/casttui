@@ -50,7 +50,7 @@ One screen of panes, all driven from the keyboard, in plain ASCII on a bare cons
 ```
 
 - **Devices** (1): scan results and saved addresses. `enter` connects, `a` adds a device by address (for a Chromecast that discovery can not see, such as on another subnet), `d` forgets a saved address, `r` scans again.
-- **Source** (2): a file browser. `enter` casts a file or opens a folder, `backspace` goes up, `.` shows dot files. `u` casts a URL from any pane (direct media, YouTube, or any yt-dlp site) and `w` shows a web page on the device.
+- **Source** (2): a file browser. `enter` casts a file (video, audio or picture) or opens a folder, `backspace` goes up, `.` shows dot files. The **[u: URL or YouTube]** button (or `u` in any pane) asks for a link: paste it and press `enter`. A direct media link plays as is, and a YouTube link or any other yt-dlp site is resolved first. **[w: web page]** (or `w`) shows a whole web page on the device.
 - **Now playing** (3): title, state, volume, progress, the device, and whether the file plays directly or is transcoded.
 - **Config** (4): every setting with its value. `enter` or `+`/`-` changes it, and the change is saved at once.
 - **History** (5): what was cast this session. `enter` casts an entry again.
