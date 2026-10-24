@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from casttui.app import CastTUI, fmt_time, progress_bar
+from casttui.app import CastTUI, fmt_time, parse_source, progress_bar
 from casttui.config import Config
 from casttui.service import CastService, Status
 
@@ -160,3 +160,115 @@ async def test_now_playing_refreshes_from_snapshot():
         app._refresh_now_playing()
         assert "Clip" in str(app.query_one("#np-title").render())
         assert "PLAYING" in str(app.query_one("#np-state").render())
+
+
+# -- command-line SOURCE (casttui <file|url>) ---------------------------------
+
+
+def make_device(name="Living Room TV"):
+    dev = MagicMock()
+    dev.name = name
+    dev.ip_addr = "192.168.1.208"
+    dev._cast.media_controller.register_status_listener = MagicMock()
+    return dev
+
+
+def service_with(devices):
+    svc = CastService()
+    svc.discover = MagicMock(return_value=devices)  # type: ignore[method-assign]
+    svc.play_file = MagicMock(return_value="clip")  # type: ignore[method-assign]
+    svc.play_stream = MagicMock()  # type: ignore[method-assign]
+    return svc
+
+
+def test_parse_source_none_url_and_file(tmp_path, monkeypatch):
+    f = tmp_path / "a clip.mp4"
+    f.write_bytes(b"x")
+    assert parse_source([]) is None
+    assert parse_source(["https://x/y.mp4"]) == "https://x/y.mp4"
+    monkeypatch.chdir(tmp_path)
+    assert parse_source(["a clip.mp4"]) == str(f)  # made absolute
+
+
+def test_parse_source_rejects_a_missing_file_and_extra_args(tmp_path, capsys):
+    with pytest.raises(SystemExit) as e:
+        parse_source([str(tmp_path / "nope.mp4")])
+    assert e.value.code == 2 and "not a file" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        parse_source(["a", "b"])
+
+
+@pytest.mark.asyncio
+async def test_source_file_casts_to_the_only_device(tmp_path, monkeypatch):
+    import casttui.app as appmod
+
+    monkeypatch.setattr(appmod, "unsupported_warning", lambda p: None)
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    svc = service_with([make_device()])
+    app = CastTUI(service=svc, config=Config(), source=str(f))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        assert svc.device is not None, "a lone Chromecast is chosen without a click"
+        svc.play_file.assert_called_once_with(str(f), transcode=False)
+        assert app.query_one("#nowplaying").display is True
+        assert app._source is None, "the source is cast once"
+
+
+@pytest.mark.asyncio
+async def test_source_waits_for_a_click_when_there_are_two_devices(tmp_path, monkeypatch):
+    import casttui.app as appmod
+
+    monkeypatch.setattr(appmod, "unsupported_warning", lambda p: None)
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    a, b = make_device("Kitchen"), make_device("Den")
+    svc = service_with([a, b])
+    app = CastTUI(service=svc, config=Config(), source=str(f))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        assert svc.device is None
+        svc.play_file.assert_not_called()
+        assert "v.mp4" in str(app.query_one("#devices-status").render())
+        await app._select(b)
+        svc.play_file.assert_called_once_with(str(f), transcode=False)
+
+
+@pytest.mark.asyncio
+async def test_source_uses_the_remembered_device_among_several(tmp_path, monkeypatch):
+    import casttui.app as appmod
+
+    monkeypatch.setattr(appmod, "unsupported_warning", lambda p: None)
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    svc = service_with([make_device("Kitchen"), make_device("Den")])
+    app = CastTUI(service=svc, config=Config(last_device="Den"), source=str(f))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        assert svc.device.name == "Den"
+        svc.play_file.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_source_url_goes_through_the_stream_path():
+    svc = service_with([make_device()])
+    app = CastTUI(service=svc, config=Config(), source="https://example.com/v.mp4")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        svc.play_stream.assert_called_once_with("https://example.com/v.mp4")
+        svc.play_file.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_no_source_still_just_selects_the_device():
+    svc = service_with([make_device()])
+    app = CastTUI(service=svc, config=Config())
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        assert svc.device is None, "without a source nothing is auto-selected"
+        svc.play_file.assert_not_called()

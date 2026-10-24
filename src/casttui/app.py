@@ -17,9 +17,11 @@ footer rather than as overlay toasts, so they never cover the controls.
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from textual import events
@@ -189,12 +191,16 @@ class CastTUI(App):
         self,
         service: CastService | None = None,
         config: Config | None = None,
+        source: str | None = None,
     ) -> None:
         super().__init__()
         self.service = service or CastService()
         self.cfg = config or Config.load()
         self._view = "devices"
         self._muted = False
+        # A file path or URL given on the command line: cast it as soon as a
+        # device is connected (the remembered one, the only one, or a click).
+        self._source = source
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -263,6 +269,19 @@ class CastTUI(App):
             )
             if match is not None:
                 await self._select(match, remembered=True)
+        # With something to cast and only one Chromecast, there is nothing to
+        # choose: use it.
+        if (
+            self.service.device is None
+            and self._source
+            and len(devices) == 1
+        ):
+            await self._select(devices[0])
+        elif self.service.device is None and self._source:
+            status.update(
+                f"{len(devices)} device(s) found — click one to cast "
+                f"{self._source_name()}:"
+            )
 
     def action_rescan(self) -> None:
         self.run_worker(self._scan(), exclusive=True)
@@ -278,8 +297,23 @@ class CastTUI(App):
         verb = "Reconnected to" if remembered else "Connected to"
         self.message(f"{verb} {device.name}")
         self._show("cast")
+        await self._run_source()
 
     # -- casting ----------------------------------------------------------
+
+    def _source_name(self) -> str:
+        return (self._source or "").rstrip("/").rsplit("/", 1)[-1]
+
+    async def _run_source(self) -> None:
+        """Cast the command-line source once, now that a device is connected."""
+        source, self._source = self._source, None
+        if not source:
+            return
+        if is_url(source):
+            self.query_one("#url", Input).value = source
+            await self._cast_stream()
+        else:
+            await self._cast_file(Path(source))
 
     def _need_device(self) -> bool:
         if self.service.device is None:
@@ -499,8 +533,36 @@ class CastTUI(App):
                 target.insert_text_at_cursor(text)
 
 
+def is_url(text: str) -> bool:
+    return text.lower().startswith(("http://", "https://"))
+
+
+def parse_source(argv: list[str]) -> str | None:
+    """The optional SOURCE argument: an existing file (made absolute) or a URL.
+
+    Exits with a usage error before the TUI starts on a missing file or on
+    more than one argument, so a bad right-click never opens an empty UI.
+    """
+    parser = argparse.ArgumentParser(
+        prog="casttui",
+        description="A terminal remote for casting to a Chromecast.",
+    )
+    parser.add_argument(
+        "source",
+        nargs="?",
+        help="a media file or URL to cast as soon as a device is connected",
+    )
+    args = parser.parse_args(argv)
+    if args.source is None or is_url(args.source):
+        return args.source
+    path = Path(args.source).expanduser()
+    if not path.is_file():
+        parser.error(f"not a file: {args.source}")
+    return str(path.resolve())
+
+
 def main() -> None:
-    CastTUI().run()
+    CastTUI(source=parse_source(sys.argv[1:])).run()
 
 
 if __name__ == "__main__":

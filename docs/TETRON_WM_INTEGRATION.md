@@ -31,7 +31,7 @@ alpha-within-category ordering:
  "bin": "casttui",
  "category": "Multimedia",
  "description": "Terminal remote for Chromecast: cast local files, URLs, YouTube and web pages, with a live progress bar and playback controls.",
- "homepage": "https://github.com/erikallankincaid/CastTUI"
+ "homepage": "https://github.com/erikallankincaid/casttui"
 }
 ```
 

@@ -30,7 +30,11 @@ Needs a real Chromecast on the same network.
 
 ```sh
 uv run casttui
+uv run casttui ~/Videos/clip.mp4        # cast a file as soon as a device is connected
+uv run casttui https://example.com/v    # or a URL (YouTube and other sites too)
 ```
+
+With a file or URL, casttui casts it to the remembered device, or to the only Chromecast on the network, and opens on **Now playing**. With several devices and none remembered, pick one and the cast starts. This is what tetron-wm's right-click **Open with… casttui** runs.
 
 Pick a device (click it, or Tab to Devices and click). The **Cast** view has a
 local-file browser (click a file to cast it) and a URL field (type or
