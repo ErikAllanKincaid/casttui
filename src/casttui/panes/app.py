@@ -29,7 +29,7 @@ from ..media import has_ffmpeg, unsupported_warning
 from ..service import CastService, is_address, model_name, served_url
 from ..settings import BY_KEY, SETTINGS, parse, show
 from .keys import PANES, bar_items, help_lines, keymap
-from .widgets import PALETTE, Live, ListPane, Pane
+from .widgets import PALETTE, ClickRow, Live, ListPane, Pane
 
 # Direct media by extension goes straight to the default receiver; any other
 # URL goes through yt-dlp (YouTube natively, other sites resolved).
@@ -120,12 +120,15 @@ class PanesApp:
         self.rule = urwid.Divider(box.get("tline", "\u2500"))
         source_body = urwid.Pile([("pack", self.where), ("pack", self.rule), self.files])
         self.np = Live(self.now_playing_text)
+        self.np_details = Live(self.now_playing_details)
+        self.controls = ClickRow(self.control_segments, self.run_action)
         self.config_list = ListPane()
         self.history_list = ListPane()
         self.panes = [
             Pane(1, "devices", "Devices", self.devices, box),
             Pane(2, "source", "Source", source_body, box),
-            Pane(3, "nowplaying", "Now playing", urwid.Filler(self.np, valign="top"), box),
+            Pane(3, "nowplaying", "Now playing", urwid.Filler(urwid.Pile(
+                [self.np, self.controls, self.np_details]), valign="top"), box),
             Pane(4, "config", "Config", self.config_list, box),
             Pane(5, "history", "History", self.history_list, box),
         ]
@@ -254,17 +257,35 @@ class PanesApp:
         vol += " (muted)" if s.muted else ""
         times = f"  {fmt_time(s.position)} / {fmt_time(s.duration)}"
         width = max(10, cols - len(times) - 2)
-        out = [f"{s.title or p.title}\n", ("state", f"{s.state:<10}"), f" {vol}\n\n",
-               f"[{lab.bar(self.labels, s.position, s.duration, width)}]{times}\n\n",
-               f"device  {dev.name} {model_name(dev)}\n",
+        return [f"{s.title or p.title}\n", ("state", f"{s.state:<10}"), f" {vol}\n\n",
+                f"[{lab.bar(self.labels, s.position, s.duration, width)}]{times}"]
+
+    def now_playing_details(self, cols: int):
+        dev, p = self.service.device, self.playing
+        if dev is None or p is None or p.kind == "page":
+            return ""
+        s = self.service.snapshot()
+        out = [f"\ndevice  {dev.name} {model_name(dev)}\n",
                f"source  {p.target}\n",
-               f"mode    {p.mode}\n"]
+               f"mode    {p.mode}"]
         url = served_url(self.service)
         if url:
-            out.append(f"served  {url}\n")
+            out.append(f"\nserved  {url}")
         if s.error:
-            out.append(("error", f"ERROR: {s.error}"))
+            out.append(("error", f"\nERROR: {s.error}"))
         return out
+
+    def control_segments(self) -> list:
+        """The clickable transport row under the progress bar. Always shown
+        with a device, so the mouse can play, stop and change the volume."""
+        if self.service.device is None:
+            return []
+        playing = self.service.snapshot().state == "PLAYING"
+        seg = [("[<<]", "rewind"), (" ", None), ("[pause]" if playing else "[play]", "playpause"),
+               (" ", None), ("[>>]", "ffwd"), (" ", None), ("[stop]", "stop"), (" ", None),
+               ("[>|]", "skip"), ("  ", None), ("[-]", "voldown"), (" vol ", None),
+               ("[+]", "volup"), (" ", None), ("[mute]", "mute")]
+        return seg
 
     def refresh_config(self) -> None:
         items = []
@@ -812,6 +833,8 @@ class PanesApp:
     def tick(self, loop=None, _data=None) -> None:
         if self.playing is not None:
             self.np._invalidate()
+            self.controls._invalidate()
+            self.np_details._invalidate()
         if loop is not None:
             loop.set_alarm_in(0.5, self.tick)
 

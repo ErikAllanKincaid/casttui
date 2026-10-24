@@ -108,3 +108,41 @@ class Live(urwid.Text):
     def rows(self, size, focus=False):
         self.set_text(self.make(size[0]))
         return super().rows(size, focus)
+
+
+class ClickRow(urwid.Text):
+    """A line of ``(text, action)`` segments rebuilt at every render; a click
+    on a segment with an action calls ``on_click(action)``. Selectable, so a
+    click also focuses the pane it sits in."""
+    _selectable = True
+
+    def __init__(self, make, on_click):
+        super().__init__("", wrap="clip")
+        self.make, self.on_click, self.segments = make, on_click, []
+
+    def _fill(self):
+        self.segments = self.make()
+        self.set_text([(("key" if a else "msg"), t) for t, a in self.segments] or "")
+
+    def render(self, size, focus=False):
+        self._fill()
+        return super().render(size, focus)
+
+    def rows(self, size, focus=False):
+        self._fill()
+        return super().rows(size, focus)
+
+    def keypress(self, size, key):
+        return key
+
+    def mouse_event(self, size, event, button, col, row, focus):
+        if event != "mouse press" or button != 1:
+            return False
+        x = 0
+        for text, action in self.segments:
+            if x <= col < x + len(text):
+                if action:
+                    self.on_click(action)
+                return True
+            x += len(text)
+        return True

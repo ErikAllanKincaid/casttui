@@ -351,3 +351,32 @@ def test_key_bar_items_are_clickable():
     assert not app.help_open
     with pytest.raises(urwid.ExitMainLoop):
         app.top.mouse_event(size, "mouse press", 1, bar_col(app, "quit"), size[1] - 1, True)
+
+
+def test_now_playing_has_clickable_controls(media):
+    svc = service([device()])
+    app = make(svc, Config(last_device="Living Room TV"))
+    app.start()
+    app.cast_file(media / "clip.mp4")
+    svc.snapshot = MagicMock(return_value=Status(state="PLAYING", position=5, duration=10))
+    size = (120, 32)
+    for label, check in [("[pause]", svc.pause), ("[>>]", svc.ffwd), ("[<<]", svc.rewind),
+                         ("[stop]", svc.stop), ("[+]", svc.volumeup), ("[-]", svc.volumedown),
+                         ("[mute]", svc.mute)]:
+        # Find the row each time: after stop the bar goes and the row moves up.
+        lines = screen(app, *size).splitlines()
+        row = next(i for i, line in enumerate(lines) if "[mute]" in line)
+        app.top.mouse_event(size, "mouse press", 1, lines[row].index(label) + 1, row, True)
+        check.assert_called_once()
+    assert app.focus == 2  # the click also focused Now playing
+    svc.snapshot = MagicMock(return_value=Status(state="PAUSED", position=5, duration=10))
+    assert "[play]" in screen(app, *size)
+
+
+def test_controls_fit_the_wide_layout_pane():
+    svc = service([device()])
+    app = make(svc, Config(last_device="Living Room TV"))
+    app.start()
+    app.playing = appmod.Playing("url", "http://x/a.mp4", "a.mp4", "direct URL")
+    svc.snapshot = MagicMock(return_value=Status(state="PLAYING", position=5, duration=10))
+    assert "[mute]" in screen(app, 200, 40)
