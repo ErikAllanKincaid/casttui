@@ -1,19 +1,24 @@
-"""Tiny persistence for last-used device and a few preferences.
+"""Persistence for the settings in :mod:`casttui.settings`.
 
 Stored as ``$XDG_CONFIG_HOME/casttui/config.toml`` (default
-``~/.config/casttui/config.toml``), per SCOPE_CastTUI.md §4. The file is flat
-and small, so we read with stdlib ``tomllib`` and write a minimal serializer
-rather than take a TOML-writer dependency (SCOPE §9: minimal footprint).
+``~/.config/casttui/config.toml``). Reads with stdlib ``tomllib``; saves with
+``tomlkit`` into the existing file, so USER's comments, order and unknown keys
+survive a save from the Config pane.
 
-Loading never raises: a missing or malformed file yields defaults, so a
-corrupt config can never stop the app from starting.
+Loading never raises: a missing or malformed file yields defaults, and a bad
+value for one key falls back to that key's default, so a corrupt config can
+never stop the app from starting.
 """
 from __future__ import annotations
 
+import copy
 import os
 import tomllib
-from dataclasses import asdict, dataclass
 from pathlib import Path
+
+import tomlkit
+
+from .settings import BY_KEY, SETTINGS, valid
 
 
 def config_path() -> Path:
@@ -21,50 +26,60 @@ def config_path() -> Path:
     return Path(base).expanduser() / "casttui" / "config.toml"
 
 
-@dataclass
 class Config:
-    last_device: str | None = None
-    seek_step: int = 10
-    volume_step: float = 0.1
-    # When true, files with a codec the Chromecast cannot decode are transcoded
-    # to H.264/AAC on the fly via ffmpeg (uses CPU). False → warn and skip.
-    transcode: bool = True
+    """One attribute per setting, defaulted from the table."""
+
+    def __init__(self, path: Path | None = None, **values) -> None:
+        self.path = path
+        for s in SETTINGS:
+            setattr(self, s.key, copy.deepcopy(s.default))
+        for key, value in values.items():
+            if key not in BY_KEY:
+                raise TypeError(f"unknown setting {key!r}")
+            setattr(self, key, value)
+
+    def __repr__(self) -> str:
+        vals = ", ".join(f"{s.key}={getattr(self, s.key)!r}" for s in SETTINGS)
+        return f"Config({vals})"
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":
         path = path or config_path()
+        cfg = cls(path=path)
         try:
             data = tomllib.loads(path.read_text())
         except (OSError, tomllib.TOMLDecodeError):
-            return cls()
-        cfg = cls()
-        if isinstance(data.get("last_device"), str):
-            cfg.last_device = data["last_device"]
-        if isinstance(data.get("seek_step"), int):
-            cfg.seek_step = data["seek_step"]
-        if isinstance(data.get("volume_step"), (int, float)):
-            cfg.volume_step = float(data["volume_step"])
-        if isinstance(data.get("transcode"), bool):
-            cfg.transcode = data["transcode"]
+            return cfg
+        for s in SETTINGS:
+            if s.key in data and valid(s, data[s.key]):
+                value = data[s.key]
+                setattr(cfg, s.key, float(value) if isinstance(s.default, float) else value)
         return cfg
 
     def save(self, path: Path | None = None) -> None:
-        path = path or config_path()
+        """Write the settings that differ from the default, or are already in
+        the file, keeping everything else in the file as it was."""
+        path = path or self.path or config_path()
+        try:
+            text = path.read_text()
+        except OSError:
+            text = ""
+        try:
+            doc = tomlkit.parse(text)
+        except Exception:  # noqa: BLE001  a malformed file: keep a copy, start fresh
+            try:
+                path.with_suffix(".toml.bad").write_text(text)
+            except OSError:
+                pass
+            doc = tomlkit.document()
+        for s in SETTINGS:
+            value = getattr(self, s.key)
+            if value is None:
+                doc.pop(s.key, None)
+            elif s.key in doc or value != s.default:
+                doc[s.key] = value
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(self._to_toml())
+            path.write_text(tomlkit.dumps(doc))
         except OSError:
             pass  # persistence is best-effort; never block the UI
-
-    def _to_toml(self) -> str:
-        lines = []
-        for key, value in asdict(self).items():
-            if value is None:
-                continue
-            if isinstance(value, str):
-                lines.append(f'{key} = "{value}"')
-            elif isinstance(value, bool):
-                lines.append(f"{key} = {str(value).lower()}")
-            else:
-                lines.append(f"{key} = {value}")
-        return "\n".join(lines) + "\n"

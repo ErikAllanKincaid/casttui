@@ -17,7 +17,6 @@ footer rather than as overlay toasts, so they never cover the controls.
 """
 from __future__ import annotations
 
-import argparse
 import asyncio
 import shutil
 import subprocess
@@ -37,6 +36,7 @@ from textual.widgets import (
     Static,
 )
 
+from .cli import is_url, parse_args, parse_source  # noqa: F401  parse_source re-exported
 from .config import Config
 from .media import has_ffmpeg, unsupported_warning
 from .service import CastService, Status
@@ -192,6 +192,7 @@ class CastTUI(App):
         service: CastService | None = None,
         config: Config | None = None,
         source: str | None = None,
+        device: str | None = None,
     ) -> None:
         super().__init__()
         self.service = service or CastService()
@@ -201,6 +202,8 @@ class CastTUI(App):
         # A file path or URL given on the command line: cast it as soon as a
         # device is connected (the remembered one, the only one, or a click).
         self._source = source
+        # --device NAME_OR_IP: connect to it directly, scanning only if that fails.
+        self._device_arg = device
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -215,7 +218,19 @@ class CastTUI(App):
         self.title = "casttui"
         self._show("devices")
         self.set_interval(0.25, self._refresh_now_playing)
-        self.run_worker(self._scan(), exclusive=True)
+        if self._device_arg:
+            self.run_worker(self._connect_arg(), exclusive=True)
+        else:
+            self.run_worker(self._scan(), exclusive=True)
+
+    async def _connect_arg(self) -> None:
+        try:
+            dev = await asyncio.to_thread(self.service.connect, self._device_arg)
+        except Exception as exc:  # noqa: BLE001
+            self.message(f"Could not reach {self._device_arg}: {exc}", error=True)
+            await self._scan()
+            return
+        await self._select(dev)
 
     def on_unmount(self) -> None:
         self.service.close()
@@ -533,36 +548,10 @@ class CastTUI(App):
                 target.insert_text_at_cursor(text)
 
 
-def is_url(text: str) -> bool:
-    return text.lower().startswith(("http://", "https://"))
-
-
-def parse_source(argv: list[str]) -> str | None:
-    """The optional SOURCE argument: an existing file (made absolute) or a URL.
-
-    Exits with a usage error before the TUI starts on a missing file or on
-    more than one argument, so a bad right-click never opens an empty UI.
-    """
-    parser = argparse.ArgumentParser(
-        prog="casttui",
-        description="A terminal remote for casting to a Chromecast.",
-    )
-    parser.add_argument(
-        "source",
-        nargs="?",
-        help="a media file or URL to cast as soon as a device is connected",
-    )
-    args = parser.parse_args(argv)
-    if args.source is None or is_url(args.source):
-        return args.source
-    path = Path(args.source).expanduser()
-    if not path.is_file():
-        parser.error(f"not a file: {args.source}")
-    return str(path.resolve())
-
-
 def main() -> None:
-    CastTUI(source=parse_source(sys.argv[1:])).run()
+    """``casttui-classic``: always this UI, same arguments as ``casttui``."""
+    args = parse_args(sys.argv[1:])
+    CastTUI(source=args.source, device=args.device).run()
 
 
 if __name__ == "__main__":

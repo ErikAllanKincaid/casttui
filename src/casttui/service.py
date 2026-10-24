@@ -12,6 +12,7 @@ hops back with Textual's ``call_from_thread``.
 """
 from __future__ import annotations
 
+import ipaddress
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -66,6 +67,27 @@ class _Listener(MediaStatusListener):
         )
 
 
+def is_address(text: str) -> bool:
+    try:
+        ipaddress.ip_address(text.strip())
+    except ValueError:
+        return False
+    return True
+
+
+def model_name(device: CattDevice) -> str:
+    """The device model (e.g. "Chromecast"), or "" when unknown."""
+    try:
+        return device._cast.cast_info.model_name or ""
+    except AttributeError:
+        return ""
+
+
+def served_url(service: "CastService") -> Optional[str]:
+    server = service._fileserver
+    return server.url if server is not None else None
+
+
 class CastService:
     """Owns one selected device and brokers actions + status.
 
@@ -90,6 +112,17 @@ class CastService:
     def discover(self) -> List[CattDevice]:
         """Blocking network scan. Run off the UI thread."""
         return discover()
+
+    def connect(self, name_or_ip: str) -> CattDevice:
+        """Reach one device directly, by address or by name. Blocking.
+
+        An address skips discovery entirely, which is the way to reach a
+        Chromecast mDNS can not see (another subnet, a VLAN, blocked multicast).
+        """
+        target = name_or_ip.strip()
+        if is_address(target):
+            return CattDevice(ip_addr=target)
+        return CattDevice(name=target)
 
     def select(
         self, device: CattDevice, on_update: Optional[Callable[[Status], None]] = None

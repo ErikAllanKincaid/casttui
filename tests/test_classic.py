@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from casttui.app import CastTUI, fmt_time, parse_source, progress_bar
+from casttui.classic import CastTUI, fmt_time, progress_bar
 from casttui.config import Config
 from casttui.service import CastService, Status
 
@@ -84,15 +84,19 @@ async def test_auto_reconnects_to_last_device():
     svc.discover = MagicMock(return_value=[dev])  # type: ignore[method-assign]
     app = make_app(svc, config=Config(last_device="Living Room TV"))
     async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.pause()
+        # The scan and the connect run in threads: wait for them, not for a
+        # fixed number of event-loop turns (that raced about 1 run in 20).
+        for _ in range(100):
+            await pilot.pause(0.02)
+            if svc.device is dev and app.query_one("#cast").display:
+                break
         assert svc.device is dev  # reconnected without a click
         assert app.query_one("#cast").display is True
 
 
 @pytest.mark.asyncio
 async def test_serve_file_transcodes_unsupported_when_enabled(monkeypatch):
-    import casttui.app as appmod
+    import casttui.classic as appmod
 
     svc = fake_service()
     svc.play_file = MagicMock(return_value="clip")  # type: ignore[method-assign]
@@ -106,7 +110,7 @@ async def test_serve_file_transcodes_unsupported_when_enabled(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_serve_file_warns_when_transcode_disabled(monkeypatch):
-    import casttui.app as appmod
+    import casttui.classic as appmod
 
     svc = fake_service()
     svc.play_file = MagicMock(return_value="clip")  # type: ignore[method-assign]
@@ -120,7 +124,7 @@ async def test_serve_file_warns_when_transcode_disabled(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_middle_click_pastes_primary_into_url(monkeypatch):
-    import casttui.app as appmod
+    import casttui.classic as appmod
 
     monkeypatch.setattr(appmod, "primary_selection", lambda: "http://host/clip.mp4\n")
     app = make_app(fake_service())
@@ -135,7 +139,7 @@ async def test_middle_click_pastes_primary_into_url(monkeypatch):
 
 
 def test_primary_selection_skips_empty_tool(monkeypatch):
-    import casttui.app as appmod
+    import casttui.classic as appmod
 
     monkeypatch.setattr(appmod.shutil, "which", lambda name: "/usr/bin/" + name)
 
@@ -181,26 +185,9 @@ def service_with(devices):
     return svc
 
 
-def test_parse_source_none_url_and_file(tmp_path, monkeypatch):
-    f = tmp_path / "a clip.mp4"
-    f.write_bytes(b"x")
-    assert parse_source([]) is None
-    assert parse_source(["https://x/y.mp4"]) == "https://x/y.mp4"
-    monkeypatch.chdir(tmp_path)
-    assert parse_source(["a clip.mp4"]) == str(f)  # made absolute
-
-
-def test_parse_source_rejects_a_missing_file_and_extra_args(tmp_path, capsys):
-    with pytest.raises(SystemExit) as e:
-        parse_source([str(tmp_path / "nope.mp4")])
-    assert e.value.code == 2 and "not a file" in capsys.readouterr().err
-    with pytest.raises(SystemExit):
-        parse_source(["a", "b"])
-
-
 @pytest.mark.asyncio
 async def test_source_file_casts_to_the_only_device(tmp_path, monkeypatch):
-    import casttui.app as appmod
+    import casttui.classic as appmod
 
     monkeypatch.setattr(appmod, "unsupported_warning", lambda p: None)
     f = tmp_path / "v.mp4"
@@ -218,7 +205,7 @@ async def test_source_file_casts_to_the_only_device(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_source_waits_for_a_click_when_there_are_two_devices(tmp_path, monkeypatch):
-    import casttui.app as appmod
+    import casttui.classic as appmod
 
     monkeypatch.setattr(appmod, "unsupported_warning", lambda p: None)
     f = tmp_path / "v.mp4"
@@ -238,7 +225,7 @@ async def test_source_waits_for_a_click_when_there_are_two_devices(tmp_path, mon
 
 @pytest.mark.asyncio
 async def test_source_uses_the_remembered_device_among_several(tmp_path, monkeypatch):
-    import casttui.app as appmod
+    import casttui.classic as appmod
 
     monkeypatch.setattr(appmod, "unsupported_warning", lambda p: None)
     f = tmp_path / "v.mp4"
