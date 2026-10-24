@@ -98,9 +98,12 @@ def show_key(k: str) -> str:
     return {" ": "space", "shift tab": "S-tab", "backspace": "bksp"}.get(k, k)
 
 
-def bar_text(table: dict, pane: str) -> str:
-    """The key bar for ``pane``: its own actions, then the main globals."""
-    parts, seen = [], set()
+def bar_items(table: dict, pane: str) -> list[tuple[str, str | None]]:
+    """The key bar for ``pane`` as ``(text, action)`` segments: its own
+    actions, then the main globals. Each segment is clickable; a pair such as
+    ``h/l seek`` is split so ``h`` rewinds and ``l`` (and the label) go forward."""
+    out: list[tuple[str, str | None]] = []
+    seen = set()
     names = [a.name for a in ACTIONS if a.scope == pane]
     names += BAR_GLOBALS.get(pane, DEFAULT_GLOBALS)
     for name in names:
@@ -109,14 +112,24 @@ def bar_text(table: dict, pane: str) -> str:
             continue
         seen.add(a.label)
         if a.label in ("seek", "vol", "+/-"):
-            pair = [x.name for x in ACTIONS if x.label == a.label and x.scope == a.scope]
-            keys = "/".join(show_key(keys_of(table, n)[0]) for n in pair if keys_of(table, n))
+            pair = [x.name for x in ACTIONS
+                    if x.label == a.label and x.scope == a.scope and keys_of(table, x.name)]
         else:
-            ks = keys_of(table, name)
-            keys = show_key(ks[0]) if ks else ""
-        if keys:
-            parts.append(f"{keys} {a.label}")
-    return "  ".join(parts)
+            pair = [name] if keys_of(table, name) else []
+        if not pair:
+            continue
+        if out:
+            out.append(("  ", None))
+        for i, n in enumerate(pair):
+            if i:
+                out.append(("/", None))
+            out.append((show_key(keys_of(table, n)[0]), n))
+        out.append((f" {a.label}", pair[-1]))
+    return out
+
+
+def bar_text(table: dict, pane: str) -> str:
+    return "".join(t for t, _ in bar_items(table, pane))
 
 
 def help_lines(table: dict) -> list[str]:

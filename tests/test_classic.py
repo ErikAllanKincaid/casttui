@@ -169,6 +169,26 @@ async def test_now_playing_refreshes_from_snapshot():
 # -- command-line SOURCE (casttui <file|url>) ---------------------------------
 
 
+async def settle(app, pilot) -> None:
+    """Wait for the scan/connect/cast workers (they run catt in threads), not
+    for a fixed number of event-loop turns, which raced."""
+    for _ in range(100):  # at most about 2 s
+        await pilot.pause(0.02)
+        if all(w.is_finished for w in app.workers):
+            break
+    await pilot.pause()
+
+
+async def settle(app, pilot) -> None:
+    """Wait for the scan/connect/cast workers (they run catt in threads), not
+    for a fixed number of event-loop turns, which raced."""
+    for _ in range(100):  # at most about 2 s
+        await pilot.pause(0.02)
+        if all(w.is_finished for w in app.workers):
+            break
+    await pilot.pause()
+
+
 def make_device(name="Living Room TV"):
     dev = MagicMock()
     dev.name = name
@@ -195,8 +215,7 @@ async def test_source_file_casts_to_the_only_device(tmp_path, monkeypatch):
     svc = service_with([make_device()])
     app = CastTUI(service=svc, config=Config(), source=str(f))
     async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.pause()
+        await settle(app, pilot)
         assert svc.device is not None, "a lone Chromecast is chosen without a click"
         svc.play_file.assert_called_once_with(str(f), transcode=False)
         assert app.query_one("#nowplaying").display is True
@@ -214,8 +233,7 @@ async def test_source_waits_for_a_click_when_there_are_two_devices(tmp_path, mon
     svc = service_with([a, b])
     app = CastTUI(service=svc, config=Config(), source=str(f))
     async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.pause()
+        await settle(app, pilot)
         assert svc.device is None
         svc.play_file.assert_not_called()
         assert "v.mp4" in str(app.query_one("#devices-status").render())
@@ -233,8 +251,7 @@ async def test_source_uses_the_remembered_device_among_several(tmp_path, monkeyp
     svc = service_with([make_device("Kitchen"), make_device("Den")])
     app = CastTUI(service=svc, config=Config(last_device="Den"), source=str(f))
     async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.pause()
+        await settle(app, pilot)
         assert svc.device.name == "Den"
         svc.play_file.assert_called_once()
 
@@ -244,8 +261,7 @@ async def test_source_url_goes_through_the_stream_path():
     svc = service_with([make_device()])
     app = CastTUI(service=svc, config=Config(), source="https://example.com/v.mp4")
     async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.pause()
+        await settle(app, pilot)
         svc.play_stream.assert_called_once_with("https://example.com/v.mp4")
         svc.play_file.assert_not_called()
 
@@ -255,7 +271,6 @@ async def test_no_source_still_just_selects_the_device():
     svc = service_with([make_device()])
     app = CastTUI(service=svc, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.pause()
+        await settle(app, pilot)
         assert svc.device is None, "without a source nothing is auto-selected"
         svc.play_file.assert_not_called()

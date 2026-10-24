@@ -28,7 +28,7 @@ from ..config import Config
 from ..media import has_ffmpeg, unsupported_warning
 from ..service import CastService, is_address, model_name, served_url
 from ..settings import BY_KEY, SETTINGS, parse, show
-from .keys import PANES, bar_text, help_lines, keymap
+from .keys import PANES, bar_items, help_lines, keymap
 from .widgets import PALETTE, Live, ListPane, Pane
 
 # Direct media by extension goes straight to the default receiver; any other
@@ -99,6 +99,7 @@ class PanesApp:
         self.depth = lab.pick_depth(self.cfg.colors, self.env)
         self.last_click = (None, None, 0.0)
         self.tab_spans = []
+        self.bar = []                   # key bar segments: (text, action)
         self.test_size = (120, 32)      # the size screen_text and tests assume
         self._build()
         if problems:
@@ -144,7 +145,8 @@ class PanesApp:
         for n, p in enumerate(self.panes):
             p.set_focus(n == self.focus)
         if self.prompt is None:
-            self.keybar.set_text(" " + bar_text(self.keys, PANES[self.focus]))
+            self.bar = [(" ", None), *bar_items(self.keys, PANES[self.focus])]
+            self.keybar.set_text("".join(t for t, _ in self.bar))
         self.body._invalidate()
 
     def build(self, cols: int, rows_: int):
@@ -671,8 +673,21 @@ class PanesApp:
             if nav in ("up", "down", "page up", "page down", "home", "end"):
                 self.body.keypress(self.size(), nav)
             return
+        self.run_action(action)
+
+    def run_action(self, action: str) -> None:
         getattr(self, "do_" + action)()
         self.layout()
+
+    def click_bar(self, col: int) -> None:
+        """A click on the key bar runs the action under the pointer."""
+        x = 0
+        for text, action in self.bar:
+            if x <= col < x + len(text):
+                if action is not None:
+                    self.run_action(action)
+                return
+            x += len(text)
 
     def do_focus_devices(self): self.focus = 0
     def do_focus_source(self): self.focus = 1
@@ -857,8 +872,15 @@ class Top(urwid.WidgetWrap):
         return None
 
     def mouse_event(self, size, event, button, col, row, focus):
+        press = event == "mouse press" and button == 1
+        if press and row == size[1] - 1 and self.app.prompt is None:
+            self.app.click_bar(col)
+            return True
+        if press and self.app.help_open:
+            self.app.press("esc")  # any click closes the help, like any key
+            return True
         handled = self.app.frame.mouse_event(size, event, button, col, row, focus)
-        if event == "mouse press" and button == 1 and row < size[1] - 2:
+        if press and row < size[1] - 2:
             self.app.clicked(col, row)
         return handled
 

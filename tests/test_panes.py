@@ -318,3 +318,36 @@ def test_a_failed_call_shows_its_error():
     keys(app, "u", *"http://h/a.mp4", "enter")
     assert "ERROR: Could not play: receiver said no" in screen(app)
     assert app.playing is None
+
+
+def bar_col(app, word):
+    """Column of ``word`` in the key bar (the last screen line)."""
+    return screen(app).splitlines()[-1].index(word)
+
+
+def test_key_bar_items_are_clickable():
+    import urwid
+
+    svc = service([device()])
+    app = make(svc, Config(last_device="Living Room TV"))
+    app.start()
+    app.focus = 2
+    app.layout()
+    svc.snapshot = MagicMock(return_value=Status(state="PLAYING"))
+    size = (120, 32)
+    for word, check in [("pause", svc.pause), ("mute", svc.mute), ("stop", svc.stop)]:
+        app.top.mouse_event(size, "mouse press", 1, bar_col(app, word), size[1] - 1, True)
+        check.assert_called_once()
+    # The two halves of "h/l seek" go back and forward.
+    line = screen(app).splitlines()[-1]
+    app.top.mouse_event(size, "mouse press", 1, line.index("h/l"), size[1] - 1, True)
+    app.top.mouse_event(size, "mouse press", 1, line.index("h/l") + 2, size[1] - 1, True)
+    svc.rewind.assert_called_once() and svc.ffwd.assert_called_once()
+    # A gap between items does nothing.
+    app.top.mouse_event(size, "mouse press", 1, line.index("  ?") , size[1] - 1, True)
+    app.top.mouse_event(size, "mouse press", 1, bar_col(app, "help"), size[1] - 1, True)
+    assert app.help_open
+    app.top.mouse_event(size, "mouse press", 1, 5, 5, True)
+    assert not app.help_open
+    with pytest.raises(urwid.ExitMainLoop):
+        app.top.mouse_event(size, "mouse press", 1, bar_col(app, "quit"), size[1] - 1, True)
