@@ -380,3 +380,16 @@ def test_controls_fit_the_wide_layout_pane():
     app.playing = appmod.Playing("url", "http://x/a.mp4", "a.mp4", "direct URL")
     svc.snapshot = MagicMock(return_value=Status(state="PLAYING", position=5, duration=10))
     assert "[mute]" in screen(app, 200, 40)
+
+
+@pytest.mark.parametrize("size", [(200, 40), (120, 30), (100, 24), (80, 20)])
+def test_now_playing_shows_everything_beside_source(media, size):
+    svc = service([device()])
+    app = make(svc, Config(last_device="Living Room TV", start_dir=str(media)))
+    app.start()
+    app.cast_file(media / "clip.mp4")
+    svc.snapshot = MagicMock(return_value=Status(state="PLAYING", position=5, duration=10))
+    text = screen(app, *size)
+    for part in ("PLAYING", "[mute]", "device  Living Room TV", "mode    direct"):
+        assert part in text, (size, part)
+    assert "clip.mp4" in text  # Source still shows its files

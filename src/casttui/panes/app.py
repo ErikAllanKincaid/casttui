@@ -37,6 +37,7 @@ MEDIA_EXT = (".mp4", ".m4v", ".mkv", ".webm", ".mov", ".avi", ".mp3", ".m4a",
              ".aac", ".flac", ".ogg", ".opus", ".wav", ".m3u8", ".mpd",
              ".jpg", ".jpeg", ".png", ".gif", ".webp")
 WIDE, NARROW, SHORT = 150, 80, 18
+MIN_OTHER = 6  # rows kept for Source/History beside a tall Now playing
 
 
 @dataclass
@@ -68,6 +69,11 @@ def human(n: int) -> str:
             return f"{n:.0f}{unit}" if unit == "B" else f"{n:.1f}{unit}"
         n /= 1024
     return str(n)
+
+
+def tilde(path: str) -> str:
+    home = str(Path.home())
+    return "~" + path[len(home):] if path.startswith(home + os.sep) else path
 
 
 class PanesApp:
@@ -122,13 +128,13 @@ class PanesApp:
         self.np = Live(self.now_playing_text)
         self.np_details = Live(self.now_playing_details)
         self.controls = ClickRow(self.control_segments, self.run_action)
+        self.np_pile = urwid.Pile([self.np, self.controls, self.np_details])
         self.config_list = ListPane()
         self.history_list = ListPane()
         self.panes = [
             Pane(1, "devices", "Devices", self.devices, box),
             Pane(2, "source", "Source", source_body, box),
-            Pane(3, "nowplaying", "Now playing", urwid.Filler(urwid.Pile(
-                [self.np, self.controls, self.np_details]), valign="top"), box),
+            Pane(3, "nowplaying", "Now playing", urwid.Filler(self.np_pile, valign="top"), box),
             Pane(4, "config", "Config", self.config_list, box),
             Pane(5, "history", "History", self.history_list, box),
         ]
@@ -170,8 +176,12 @@ class PanesApp:
                               focus_item=1)
         self.tab_spans = []
         dev_h = min(len(self.devices.body) + 2, max(4, rows_ // 3))
-        np_h = 12 if rows_ >= 30 else 9
         left = urwid.Pile([(dev_h, self.panes[0]), self.panes[3]])
+        # Now playing is as tall as what it shows; the pane above or below it
+        # (Source, History) gets the rest but keeps at least MIN_OTHER rows.
+        left_w = max(30, min(44, cols // 3))
+        np_w = (60 if cols >= WIDE else cols - left_w) - 2
+        np_h = max(5, min(self.np_pile.rows((np_w,)) + 2, rows_ - MIN_OTHER))
         if cols >= WIDE:
             right = urwid.Pile([(np_h, self.panes[2]), self.panes[4]])
             cols_w = urwid.Columns([(58, left), self.panes[1], (60, right)])
@@ -180,7 +190,7 @@ class PanesApp:
             if i == 4:  # History has no room at this width: show it alone
                 return self.panes[4]
             right = urwid.Pile([self.panes[1], (np_h, self.panes[2])])
-            cols_w = urwid.Columns([(44, left), right])
+            cols_w = urwid.Columns([(left_w, left), right])
             where = {0: (0, 0), 3: (0, 1), 1: (1, 0), 2: (1, 1)}
         col, row = where[i]
         cols_w.focus_position = col
@@ -238,9 +248,7 @@ class PanesApp:
         self.files.set_items(items, keep=False)
         if select:
             self.files.select(("dir", path / select))
-        home = str(Path.home())
-        shown = str(path)
-        self.where.set_text("~" + shown[len(home):] if shown.startswith(home) else shown)
+        self.where.set_text(tilde(str(path)))
 
     def now_playing_text(self, cols: int):
         dev = self.service.device
@@ -266,7 +274,7 @@ class PanesApp:
             return ""
         s = self.service.snapshot()
         out = [f"\ndevice  {dev.name} {model_name(dev)}\n",
-               f"source  {p.target}\n",
+               f"source  {tilde(p.target)}\n",
                f"mode    {p.mode}"]
         url = served_url(self.service)
         if url:
@@ -283,7 +291,7 @@ class PanesApp:
         playing = self.service.snapshot().state == "PLAYING"
         seg = [("[<<]", "rewind"), (" ", None), ("[pause]" if playing else "[play]", "playpause"),
                (" ", None), ("[>>]", "ffwd"), (" ", None), ("[stop]", "stop"), (" ", None),
-               ("[>|]", "skip"), ("  ", None), ("[-]", "voldown"), (" vol ", None),
+               ("[>|]", "skip"), (" vol", None), ("[-]", "voldown"),
                ("[+]", "volup"), (" ", None), ("[mute]", "mute")]
         return seg
 
