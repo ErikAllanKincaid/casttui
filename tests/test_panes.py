@@ -418,3 +418,21 @@ def test_a_picture_is_shown_as_a_picture(media):
     app.start()
     app.cast_file(media / "photo.jpg")
     assert app.playing.mode == "picture"
+
+
+def test_focus_colours_only_the_border_and_reverses_the_title(media):
+    app = make(cfg=Config(start_dir=str(media)))
+    keys(app, "2")
+    canvas = app.frame.render((120, 32), focus=True)
+    runs = [(a, t.decode()) for row in canvas.content() for a, _, t in row]
+    assert any(a == "title_focus" and ">2 Source" in t for a, t in runs)
+    assert not any(a == "frame_focus" and "shows/" in t for a, t in runs)
+    assert any(a == "body" and "shows/" in t for a, t in runs)
+
+
+def test_palette_has_no_bright_yellow_and_reverses_selection():
+    from casttui.panes.widgets import PALETTE
+
+    roles = {name: rest for name, *rest in PALETTE}
+    assert not any("yellow" in " ".join(v) for v in roles.values())
+    assert "standout" in roles["sel_focus"][0] and "standout" in roles["key"][0]

@@ -7,15 +7,24 @@ import urwid
 # Meaning never rides on colour alone: focus also gets bold/reverse, errors
 # also start with "ERROR:", state is a word.
 PALETTE = [
-    ("frame", "light gray", "default", "", "g50", "default"),
-    ("frame_focus", "yellow,bold", "default", "bold", "#fd0,bold", "default"),
-    ("sel_focus", "black", "yellow", "standout", "black", "#fd0"),
-    ("dim", "light gray", "default", "", "g58", "default"),
-    ("state", "light green,bold", "default", "bold", "#8f8,bold", "default"),
-    ("key", "black", "light gray", "standout", "black", "#bbb"),
+    # Mid-brightness colours (the plain, non-bright 16) contrast with both a
+    # dark and a light background; bright yellow/green/red vanish on white.
+    # Selection and the key bar use reverse video: the terminal's own
+    # foreground and background swapped, readable in any theme.
+    ("frame", "default", "default", "", "default", "default"),
+    ("body", "default", "default", "", "default", "default"),
+    ("frame_focus", "dark magenta,bold", "default", "bold", "#a0a,bold", "default"),
+    # The focused pane's title: no colour can be read on every theme (dark
+    # magenta is 1.9:1 on GNOME's dark background), reverse video always can.
+    ("title_focus", "default,standout,bold", "default", "standout,bold",
+     "default,standout,bold", "default"),
+    ("sel_focus", "default,standout", "default", "standout", "default,standout", "default"),
+    ("dim", "default", "default", "", "default", "default"),
+    ("state", "dark green,bold", "default", "bold", "#080,bold", "default"),
+    ("key", "default,standout", "default", "standout", "default,standout", "default"),
     ("msg", "default", "default", "", "default", "default"),
-    ("error", "light red,bold", "default", "bold", "#f66,bold", "default"),
-    ("prompt", "yellow,bold", "default", "bold", "#fd0,bold", "default"),
+    ("error", "dark red,bold", "default", "bold", "#c00,bold", "default"),
+    ("prompt", "dark magenta,bold", "default", "bold", "#a0a,bold", "default"),
 ]
 
 
@@ -67,15 +76,18 @@ class Pane(urwid.WidgetWrap):
     def __init__(self, num: int, name: str, title: str, body, box: dict):
         self.num, self.name, self.title, self.body = num, name, title, body
         self.note = ""
-        self.attr = urwid.AttrMap(urwid.Text(""), "frame")
         self.focused = False
+        self.attr = urwid.AttrMap(urwid.Text(""), "frame")
         self.relabel(box)
         super().__init__(self.attr)
 
     def relabel(self, box: dict) -> None:
         self.box = box
+        # The body is mapped to plain "body" first, so the focus colour on the
+        # outer AttrMap reaches only the border, not the rows inside.
         self.attr.original_widget = urwid.LineBox(
-            self.body, title=self.heading(), title_align="left", **box)
+            urwid.AttrMap(self.body, "body"), title=self.heading(), title_align="left",
+            title_attr="title_focus" if self.focused else None, **box)
 
     def heading(self) -> str:
         # The focused pane is also marked in the title, for mono screens.
@@ -84,9 +96,10 @@ class Pane(urwid.WidgetWrap):
         return f"{mark}{self.num} {self.title}{note}"
 
     def set_focus(self, on: bool) -> None:
-        self.focused = on
+        if on != self.focused:
+            self.focused = on
+            self.relabel(self.box)  # title_attr is fixed when the LineBox is made
         self.attr.set_attr_map({None: "frame_focus" if on else "frame"})
-        self.attr.original_widget.set_title(self.heading())
 
     def set_note(self, note: str) -> None:
         self.note = note
