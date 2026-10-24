@@ -10,6 +10,7 @@ import os
 import sys
 from pathlib import Path
 
+from . import __version__
 from .settings import help_text
 
 UIS = ("panes", "classic")
@@ -27,6 +28,7 @@ def parser() -> argparse.ArgumentParser:
         "CASTTUI_ICONS=ascii|unicode, CASTTUI_COLORS=mono|16|256, NO_COLOR",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    p.add_argument("-V", "--version", action="version", version=f"casttui {__version__}")
     p.add_argument("source", nargs="?",
                    help="a media file or URL to cast as soon as a device is connected")
     p.add_argument("-d", "--device", metavar="NAME_OR_IP",

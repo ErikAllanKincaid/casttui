@@ -1,6 +1,6 @@
 [project]
 name = "casttui"
-version = "0.0.1"
+version = "0.1.0"
 description = "A terminal UI for casting media to a Chromecast, built on catt."
 readme = "README.md"
 requires-python = ">=3.11"

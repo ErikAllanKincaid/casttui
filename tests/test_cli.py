@@ -46,3 +46,11 @@ def test_help_lists_every_setting(capsys):
     out = capsys.readouterr().out
     for s in SETTINGS:
         assert s.key in out
+
+
+def test_version(capsys):
+    from casttui import __version__
+
+    with pytest.raises(SystemExit):
+        parse_args(["--version"])
+    assert capsys.readouterr().out.strip() == f"casttui {__version__}"
